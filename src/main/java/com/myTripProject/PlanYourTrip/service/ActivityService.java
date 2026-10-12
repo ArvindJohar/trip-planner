@@ -8,8 +8,11 @@ import com.myTripProject.PlanYourTrip.exception.BadRequestException;
 import com.myTripProject.PlanYourTrip.exception.ResourceNotFoundException;
 import com.myTripProject.PlanYourTrip.repository.ActivityRepository;
 import com.myTripProject.PlanYourTrip.repository.DestinationRepository;
+import com.myTripProject.PlanYourTrip.repository.TripRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,9 +20,12 @@ import java.util.List;
 public class ActivityService {
     private final ActivityRepository activityRepository;
     private final DestinationRepository destinationRepository;
-    ActivityService(ActivityRepository activityRepository, DestinationRepository destinationRepository) {
+    private final TripRepository tripRepository;
+
+    ActivityService(ActivityRepository activityRepository, DestinationRepository destinationRepository, TripRepository tripRepository) {
         this.activityRepository = activityRepository;
         this.destinationRepository = destinationRepository;
+        this.tripRepository = tripRepository;
     }
     public ActivityResponse createActivity(Long destinationId, ActivityRequest request) {
         Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("No destination with requested id exists"));
@@ -71,8 +77,26 @@ public class ActivityService {
         }
         return activityResponses;
     }
+
+    public List<ActivityResponse> getActivities2(Long tripId) {
+        tripRepository.findById(tripId).orElseThrow(() -> new ResourceNotFoundException("Trip not exists"));
+        List<Activity> activities = activityRepository.findByDestinationTripId(tripId);
+        List<ActivityResponse> activityResponses = new ArrayList<>();
+        for(Activity activity : activities) {
+            activityResponses.add(createActivityResponse(activity));
+        }
+        return activityResponses;
+    }
+
     public ActivityResponse getActivityById(Long activityId) {
-        Activity activity = activityRepository.findById(activityId).orElseThrow(() -> new ResourceNotFoundException("No activity with this id exists"));
+        System.out.println("Fetching activity by ID: " + activityId);
+
+        Activity activity = activityRepository.findById(activityId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No activity with this id exists"));
+
+        System.out.println("Found activity ID: " + activity.getId());
+
         return createActivityResponse(activity);
     }
     public ActivityResponse createActivityResponse(Activity activity) {
@@ -89,5 +113,27 @@ public class ActivityService {
     public void deleteActivityById(Long activityId) {
         Activity activity = activityRepository.findById(activityId).orElseThrow(() -> new ResourceNotFoundException("No such activity exists"));
         activityRepository.delete(activity);
+    }
+    @Transactional
+    public ActivityResponse updateActivityById(Long id, ActivityRequest request) {
+        if (request.getTitle() != null && request.getTitle().isBlank()) {
+            throw new BadRequestException("Title must not be blank");
+        }
+        if (request.getCost() != null
+                && request.getCost().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BadRequestException("Cost cannot be negative");
+        }
+        Activity activity = activityRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Activity not exists"));
+        if(request.getDate() != null) activity.setDate(request.getDate());
+        if(request.getStartTime() != null) activity.setStartTime(request.getStartTime());
+        if(request.getEndTime() != null) activity.setEndTime(request.getEndTime());
+        if(request.getCategory() != null) activity.setCategory(request.getCategory());
+        if(request.getCost() != null) activity.setCost(request.getCost());
+        if(request.getTitle() != null) activity.setTitle(request.getTitle());
+
+        if(!activity.getStartTime().isBefore(activity.getEndTime())) throw new BadRequestException("Start time must be before End time");
+
+        Activity updatedActivity = activityRepository.save(activity);
+        return createActivityResponse(updatedActivity);
     }
 }

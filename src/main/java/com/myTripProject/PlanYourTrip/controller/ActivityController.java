@@ -23,8 +23,13 @@ public class ActivityController {
     }
 
     @GetMapping("/destinations/{destinationId}/activities")
-    public List<ActivityResponse> getActivities(@PathVariable @RequestBody Long destinationId) {
+    public List<ActivityResponse> getActivities(@PathVariable Long destinationId) {
         return activityService.getActivities(destinationId);
+    }
+
+    @GetMapping("/trips/{tripId}/activities")
+    public List<ActivityResponse> getActivities2(@PathVariable Long tripId) {
+        return activityService.getActivities2(tripId);
     }
 
     @GetMapping("/activities/{activityId}")
@@ -35,5 +40,10 @@ public class ActivityController {
     @DeleteMapping("/activities/{activityId}")
     public void deleteActivityById(@PathVariable Long activityId) {
         activityService.deleteActivityById(activityId);
+    }
+
+    @PatchMapping("/activities/{activityId}")
+    public ActivityResponse updateActivityById(@PathVariable Long activityId, @RequestBody ActivityRequest request) {
+        return activityService.updateActivityById(activityId, request);
     }
 }

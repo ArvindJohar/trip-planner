@@ -1,5 +1,6 @@
 package com.myTripProject.PlanYourTrip.controller;
 
+import com.myTripProject.PlanYourTrip.dto.DestinationPatchRequest;
 import com.myTripProject.PlanYourTrip.dto.DestinationRequest;
 import com.myTripProject.PlanYourTrip.dto.DestinationResponse;
 import com.myTripProject.PlanYourTrip.service.DestinationService;
@@ -37,4 +38,9 @@ public class DestinationController {
     public void deleteDestinationById(@PathVariable Long destinationId) {
         destinationService.deleteDestinationById(destinationId);
     }
+
+    @PatchMapping("/destinations/{destinationId}")
+        public DestinationResponse updateDestinationById(@PathVariable Long destinationId, @RequestBody DestinationPatchRequest request) {
+            return destinationService.updateDestinationById(destinationId,request);
+        }
 }

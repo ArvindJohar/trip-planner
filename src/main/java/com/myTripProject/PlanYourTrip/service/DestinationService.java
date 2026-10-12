@@ -1,9 +1,6 @@
 package com.myTripProject.PlanYourTrip.service;
 
-import com.myTripProject.PlanYourTrip.dto.ActivityRequest;
-import com.myTripProject.PlanYourTrip.dto.ActivityResponse;
-import com.myTripProject.PlanYourTrip.dto.DestinationRequest;
-import com.myTripProject.PlanYourTrip.dto.DestinationResponse;
+import com.myTripProject.PlanYourTrip.dto.*;
 import com.myTripProject.PlanYourTrip.entity.Activity;
 import com.myTripProject.PlanYourTrip.entity.Destination;
 import com.myTripProject.PlanYourTrip.entity.Trip;
@@ -15,6 +12,7 @@ import com.myTripProject.PlanYourTrip.repository.TripRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -113,5 +111,37 @@ public class DestinationService {
     public void deleteDestinationById(Long destinationId) {
         Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("No such destination exists"));
         destinationRepository.delete(destination);
+    }
+    @Transactional
+    public DestinationResponse updateDestinationById(Long destinationId, DestinationPatchRequest request) {
+        Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("Destination not exists"));
+        if(request.getCity() != null) destination.setCity(request.getCity());
+        if(request.getStartDate() != null) destination.setStartDate(request.getStartDate());
+        if(request.getEndDate() != null) destination.setEndDate(request.getEndDate());
+        if(request.getActivities() != null) {
+            for(ActivityPatchRequest activityPatchRequest : request.getActivities()) {
+                if(activityPatchRequest.getActivityId() == null) throw new BadRequestException("Id not provided for an activity");
+
+                if (activityPatchRequest.getTitle() != null && activityPatchRequest.getTitle().isBlank()) {
+                    throw new BadRequestException("Title must not be blank");
+                }
+                if (activityPatchRequest.getCost() != null
+                        && activityPatchRequest.getCost().compareTo(BigDecimal.ZERO) < 0) {
+                    throw new BadRequestException("Cost cannot be negative");
+                }
+
+                Activity activity = activityRepository.findById(activityPatchRequest.getActivityId()).orElseThrow(() -> new BadRequestException("Incorrect data found"));
+                if(activityPatchRequest.getStartTime() != null) activity.setStartTime(activityPatchRequest.getStartTime());
+                if(activityPatchRequest.getEndTime() != null) activity.setEndTime(activityPatchRequest.getEndTime());
+                if(activityPatchRequest.getCost() != null) activity.setCost(activityPatchRequest.getCost());
+                if(activityPatchRequest.getTitle() != null) activity.setTitle(activityPatchRequest.getTitle());
+                if(activityPatchRequest.getCategory() != null) activity.setCategory(activityPatchRequest.getCategory());
+                if(activityPatchRequest.getDate() != null) activity.setDate(activityPatchRequest.getDate());
+                if(!activity.getStartTime().isBefore(activity.getEndTime())) throw new BadRequestException("Start time must be before End time");
+                activityRepository.save(activity);
+            }
+        }
+        Destination updatedDestination = destinationRepository.save(destination);
+        return createDestinationResponse(updatedDestination);
     }
 }
