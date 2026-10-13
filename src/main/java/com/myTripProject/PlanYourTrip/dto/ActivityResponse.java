@@ -7,6 +7,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Getter
@@ -20,4 +21,6 @@ public class ActivityResponse {
     private BigDecimal cost;
     private LocalTime startTime;
     private LocalTime endTime;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

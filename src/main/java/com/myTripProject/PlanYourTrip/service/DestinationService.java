@@ -94,6 +94,8 @@ public class DestinationService {
         destinationResponse.setCity(destination.getCity());
         destinationResponse.setStartDate(destination.getStartDate());
         destinationResponse.setEndDate(destination.getEndDate());
+        destinationResponse.setCreatedAt(destination.getCreatedAt());
+        destinationResponse.setUpdatedAt(destination.getUpdatedAt());
         List<Activity> activities = activityRepository.findByDestinationId(destination.getId());
         List<ActivityResponse> activityResponses = new ArrayList<>();
         for(Activity activity : activities) {
@@ -113,55 +115,127 @@ public class DestinationService {
         destinationRepository.delete(destination);
     }
     @Transactional
-    public DestinationResponse updateDestinationById(Long destinationId, DestinationPatchRequest request) {
-        Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("Destination not exists"));
-        if(request.getCity() != null) destination.setCity(request.getCity());
-        if(request.getStartDate() != null) destination.setStartDate(request.getStartDate());
-        if(request.getEndDate() != null) destination.setEndDate(request.getEndDate());
+    public DestinationResponse updateDestinationById(
+            Long destinationId, DestinationPatchRequest request) {
+
+        Destination destination = destinationRepository.findById(destinationId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Destination not exists"));
+
+        // 1. Apply Destination updates
+        if (request.getCity() != null) {
+            destination.setCity(request.getCity().trim());
+        }
+
+        if (request.getStartDate() != null) {
+            destination.setStartDate(request.getStartDate());
+        }
+
+        if (request.getEndDate() != null) {
+            destination.setEndDate(request.getEndDate());
+        }
+
+        // 2. Apply Activity updates
+        if (request.getActivities() != null) {
+
+            for (ActivityPatchRequest activityRequest : request.getActivities()) {
+
+                if (activityRequest.getActivityId() == null) {
+                    throw new BadRequestException(
+                            "Id not provided for an activity");
+                }
+
+                Activity activity = activityRepository
+                        .findById(activityRequest.getActivityId())
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Activity not found"));
+
+                if (!activity.getDestination().getId()
+                        .equals(destinationId)) {
+                    throw new BadRequestException(
+                            "Activity does not belong to this destination.");
+                }
+
+                if (activityRequest.getStartTime() != null) {
+                    activity.setStartTime(activityRequest.getStartTime());
+                }
+
+                if (activityRequest.getEndTime() != null) {
+                    activity.setEndTime(activityRequest.getEndTime());
+                }
+
+                if (activityRequest.getCost() != null) {
+                    activity.setCost(activityRequest.getCost());
+                }
+
+                if (activityRequest.getTitle() != null) {
+                    activity.setTitle(activityRequest.getTitle().trim());
+                }
+
+                if (activityRequest.getCategory() != null) {
+                    activity.setCategory(activityRequest.getCategory());
+                }
+
+                if (activityRequest.getDate() != null) {
+                    activity.setDate(activityRequest.getDate());
+                }
+            }
+        }
+
+        // 3. Validate Destination's own fields
+        if (destination.getCity().isBlank()) {
+            throw new BadRequestException("City must not be blank");
+        }
+
         if (destination.getStartDate().isAfter(destination.getEndDate())) {
             throw new BadRequestException(
-                    "Start date cannot be after end date"
-            );
+                    "Start date cannot be after end date");
         }
+
+        // 4. Validate Destination dates against its Trip
         Trip trip = destination.getTrip();
 
         if (destination.getStartDate().isBefore(trip.getStartDate())
                 || destination.getEndDate().isAfter(trip.getEndDate())) {
             throw new BadRequestException(
-                    "Destination dates must lie within trip dates"
-            );
+                    "Destination dates must lie within trip dates");
         }
 
-        if(request.getActivities() != null) {
-            for(ActivityPatchRequest activityPatchRequest : request.getActivities()) {
-                if(activityPatchRequest.getActivityId() == null) throw new BadRequestException("Id not provided for an activity");
-                Activity activity = activityRepository.findById(activityPatchRequest.getActivityId()).orElseThrow(() -> new BadRequestException("Incorrect data found"));
-                if(!activity.getDestination().equals(destination)) throw new BadRequestException("Activity does not belong to this destination.");
-                if (activityPatchRequest.getTitle() != null && activityPatchRequest.getTitle().isBlank()) {
-                    throw new BadRequestException("Title must not be blank");
-                }
-                if (activityPatchRequest.getCost() != null
-                        && activityPatchRequest.getCost().compareTo(BigDecimal.ZERO) < 0) {
-                    throw new BadRequestException("Cost cannot be negative");
-                }
-                if(activityPatchRequest.getStartTime() != null) activity.setStartTime(activityPatchRequest.getStartTime());
-                if(activityPatchRequest.getEndTime() != null) activity.setEndTime(activityPatchRequest.getEndTime());
-                if(activityPatchRequest.getCost() != null) activity.setCost(activityPatchRequest.getCost());
-                if(activityPatchRequest.getTitle() != null) activity.setTitle(activityPatchRequest.getTitle());
-                if(activityPatchRequest.getCategory() != null) activity.setCategory(activityPatchRequest.getCategory());
-                if(activityPatchRequest.getDate() != null) activity.setDate(activityPatchRequest.getDate());
-                if(!activity.getStartTime().isBefore(activity.getEndTime())) throw new BadRequestException("Start time must be before End time");
+        // 5. Validate every Activity, including those not in the request
+        List<Activity> allActivities =
+                activityRepository.findByDestinationId(destinationId);
 
-                if (activity.getDate().isBefore(destination.getStartDate())
-                        || activity.getDate().isAfter(destination.getEndDate())) {
-                    throw new BadRequestException(
-                            "Activity date must lie within destination dates"
-                    );
-                }
-                activityRepository.save(activity);
+        for (Activity activity : allActivities) {
+
+            // Activity's own constraints
+            if (activity.getTitle().isBlank()) {
+                throw new BadRequestException(
+                        "Title must not be blank");
+            }
+
+            if (activity.getCost().compareTo(BigDecimal.ZERO) < 0) {
+                throw new BadRequestException(
+                        "Cost cannot be negative");
+            }
+
+            if (!activity.getStartTime().isBefore(activity.getEndTime())) {
+                throw new BadRequestException(
+                        "Start time must be before End time");
+            }
+
+            // Activity date must fit within the final Destination dates
+            if (activity.getDate().isBefore(destination.getStartDate())
+                    || activity.getDate().isAfter(destination.getEndDate())) {
+                throw new BadRequestException(
+                        "Activity date must lie within destination dates");
             }
         }
-        Destination updatedDestination = destinationRepository.save(destination);
+
+        // 6. Save Destination and return response
+        Destination updatedDestination =
+                destinationRepository.saveAndFlush(destination);
+
         return createDestinationResponse(updatedDestination);
     }
 }

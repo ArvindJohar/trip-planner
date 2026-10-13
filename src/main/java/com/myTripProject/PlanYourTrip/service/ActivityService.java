@@ -108,6 +108,8 @@ public class ActivityService {
         activityResponse.setDate(activity.getDate());
         activityResponse.setCost(activity.getCost());
         activityResponse.setCategory(activity.getCategory());
+        activityResponse.setCreatedAt(activity.getCreatedAt());
+        activityResponse.setUpdatedAt(activity.getUpdatedAt());
         return activityResponse;
     }
     public void deleteActivityById(Long activityId) {
@@ -116,24 +118,56 @@ public class ActivityService {
     }
     @Transactional
     public ActivityResponse updateActivityById(Long id, ActivityRequest request) {
-        if (request.getTitle() != null && request.getTitle().isBlank()) {
+
+        Activity activity = activityRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Activity does not exist"
+                ));
+
+        if (request.getTitle() != null) {
+            activity.setTitle(request.getTitle().trim());
+        }
+        if (request.getDate() != null) {
+            activity.setDate(request.getDate());
+        }
+        if (request.getStartTime() != null) {
+            activity.setStartTime(request.getStartTime());
+        }
+        if (request.getEndTime() != null) {
+            activity.setEndTime(request.getEndTime());
+        }
+        if (request.getCategory() != null) {
+            activity.setCategory(request.getCategory());
+        }
+        if (request.getCost() != null) {
+            activity.setCost(request.getCost());
+        }
+
+        if (!activity.getStartTime().isBefore(activity.getEndTime())) {
+            throw new BadRequestException(
+                    "Activity start time must be before end time"
+            );
+        }
+
+        Destination destination = activity.getDestination();
+
+        if (activity.getDate().isBefore(destination.getStartDate())
+                || activity.getDate().isAfter(destination.getEndDate())) {
+            throw new BadRequestException(
+                    "Activity date must fall within destination dates"
+            );
+        }
+
+        if (activity.getTitle().isBlank()) {
             throw new BadRequestException("Title must not be blank");
         }
-        if (request.getCost() != null
-                && request.getCost().compareTo(BigDecimal.ZERO) < 0) {
+
+        if (activity.getCost().compareTo(BigDecimal.ZERO) < 0) {
             throw new BadRequestException("Cost cannot be negative");
         }
-        Activity activity = activityRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Activity not exists"));
-        if(request.getDate() != null) activity.setDate(request.getDate());
-        if(request.getStartTime() != null) activity.setStartTime(request.getStartTime());
-        if(request.getEndTime() != null) activity.setEndTime(request.getEndTime());
-        if(request.getCategory() != null) activity.setCategory(request.getCategory());
-        if(request.getCost() != null) activity.setCost(request.getCost());
-        if(request.getTitle() != null) activity.setTitle(request.getTitle());
 
-        if(!activity.getStartTime().isBefore(activity.getEndTime())) throw new BadRequestException("Start time must be before End time");
+        Activity updatedActivity = activityRepository.saveAndFlush(activity);
 
-        Activity updatedActivity = activityRepository.save(activity);
         return createActivityResponse(updatedActivity);
     }
 }

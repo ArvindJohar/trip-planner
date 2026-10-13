@@ -26,12 +26,14 @@ public class TripService {
     private final DestinationRepository destinationRepository;
     private final ActivityRepository activityRepository;
     private final ActivityService activityServiceBean;
+    private final DestinationService destinationServiceBean;
 
-    public TripService(TripRepository tripRepository, DestinationRepository destinationRepository, ActivityRepository activityRepository, ActivityService activityServiceBean) {
+    public TripService(TripRepository tripRepository, DestinationRepository destinationRepository, ActivityRepository activityRepository, ActivityService activityServiceBean, DestinationService destinationServiceBean) {
         this.tripRepository = tripRepository;
         this.destinationRepository = destinationRepository;
         this.activityRepository = activityRepository;
         this.activityServiceBean = activityServiceBean;
+        this.destinationServiceBean = destinationServiceBean;
     }
 
     @Transactional
@@ -213,7 +215,8 @@ public class TripService {
         response.setTravellers(trip.getTravellers());
         response.setCurrency(trip.getCurrency());
         response.setTotalBudget(trip.getTotalBudget());
-
+        response.setCreatedAt(trip.getCreatedAt());
+        response.setUpdatedAt(trip.getUpdatedAt());
         List<Destination> destinations =
                 destinationRepository.findByTripId(trip.getId());
 
@@ -221,24 +224,7 @@ public class TripService {
 
         for (Destination destination : destinations) {
 
-            DestinationResponse destinationResponse = new DestinationResponse();
-
-            destinationResponse.setId(destination.getId());
-            destinationResponse.setCity(destination.getCity());
-            destinationResponse.setStartDate(destination.getStartDate());
-            destinationResponse.setEndDate(destination.getEndDate());
-
-            List<Activity> activities =
-                    activityRepository.findByDestinationId(destination.getId());
-
-            List<ActivityResponse> activityResponses = new ArrayList<>();
-
-            for (Activity activity : activities) {
-                ActivityResponse activityResponse = activityServiceBean.createActivityResponse(activity);
-                activityResponses.add(activityResponse);
-            }
-
-            destinationResponse.setActivities(activityResponses);
+            DestinationResponse destinationResponse = destinationServiceBean.createDestinationResponse(destination);
             destinationResponses.add(destinationResponse);
         }
 
@@ -264,90 +250,211 @@ public class TripService {
 
     @Transactional
     public TripResponse updateTripById(Long id, TripPatchRequest tripPatchRequest) {
-        Trip trip = tripRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Trip not exists"));
 
-        if(tripPatchRequest.getCountry() != null) trip.setCountry(tripPatchRequest.getCountry());
-        if(tripPatchRequest.getCurrency() != null) {
-            String currency = tripPatchRequest.getCurrency().trim().toUpperCase();
-            if(!currency.matches("[A-Z]{3}")) throw new BadRequestException("Invalid currency");
-            trip.setCurrency(currency);
+        Trip trip = tripRepository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Trip not exists"));
+
+        // 1. Apply Trip updates
+        if (tripPatchRequest.getCountry() != null) {
+            trip.setCountry(tripPatchRequest.getCountry());
         }
-        if(tripPatchRequest.getTitle() != null) {
-            if(tripPatchRequest.getTitle().isBlank()) throw new BadRequestException("Title cannot be empty");
-            trip.setTitle(tripPatchRequest.getTitle());
+
+        if (tripPatchRequest.getCurrency() != null) {
+            trip.setCurrency(
+                    tripPatchRequest.getCurrency().trim().toUpperCase());
         }
-        if(tripPatchRequest.getStartDate() != null) trip.setStartDate(tripPatchRequest.getStartDate());
-        if(tripPatchRequest.getEndDate() != null) trip.setEndDate(tripPatchRequest.getEndDate());
-        if(trip.getEndDate().isBefore(trip.getStartDate())) throw new BadRequestException("Invalid dates");
-        if(tripPatchRequest.getTotalBudget() != null) {
-            if(tripPatchRequest.getTotalBudget().compareTo(BigDecimal.ZERO) < 0) throw new BadRequestException("Budget cannot be negative.");
+
+        if (tripPatchRequest.getTitle() != null) {
+            trip.setTitle(tripPatchRequest.getTitle().trim());
+        }
+
+        if (tripPatchRequest.getStartDate() != null) {
+            trip.setStartDate(tripPatchRequest.getStartDate());
+        }
+
+        if (tripPatchRequest.getEndDate() != null) {
+            trip.setEndDate(tripPatchRequest.getEndDate());
+        }
+
+        if (tripPatchRequest.getTotalBudget() != null) {
             trip.setTotalBudget(tripPatchRequest.getTotalBudget());
         }
-        if(tripPatchRequest.getTravellers() != null) {
-            if(tripPatchRequest.getTravellers() < 1) throw new BadRequestException("Atleast 1 traveller required.");
+
+        if (tripPatchRequest.getTravellers() != null) {
             trip.setTravellers(tripPatchRequest.getTravellers());
         }
-        if(tripPatchRequest.getDestinations() != null) {
-            for(DestinationPatchRequest2 destinationPatchRequest2: tripPatchRequest.getDestinations()) {
-                if(destinationPatchRequest2.getDestinationId() == null) throw new BadRequestException("Destination Id not mentioned.");
-                Destination destination = destinationRepository.findById(destinationPatchRequest2.getDestinationId()).orElseThrow(() -> new ResourceNotFoundException("Destination not exists"));
-                if(!destination.getTrip().getId().equals(id)) throw new BadRequestException("Destination does not belong to the trip.");
-                if(destinationPatchRequest2.getCity() != null) {
-                    String city = destinationPatchRequest2.getCity().trim();
-                    if (city.isEmpty()) throw new BadRequestException("Enter the city name.");
-                    destination.setCity(city);
+
+        // 2. Apply Destination and Activity updates
+        if (tripPatchRequest.getDestinations() != null) {
+
+            for (DestinationPatchRequest2 destinationRequest
+                    : tripPatchRequest.getDestinations()) {
+
+                if (destinationRequest.getDestinationId() == null) {
+                    throw new BadRequestException(
+                            "Destination Id not mentioned.");
                 }
-                if(destinationPatchRequest2.getStartDate() != null) destination.setStartDate(destinationPatchRequest2.getStartDate());
-                if(destinationPatchRequest2.getEndDate() != null) destination.setEndDate(destinationPatchRequest2.getEndDate());
-                if(destination.getStartDate().isAfter(destination.getEndDate())) throw new BadRequestException("Invalid dates provided");
-                if(destination.getStartDate().isBefore(trip.getStartDate()) || destination.getEndDate().isAfter(trip.getEndDate())) {
-                    throw new BadRequestException("Destination dates outside the trip dates");
+
+                Destination destination = destinationRepository
+                        .findById(destinationRequest.getDestinationId())
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Destination not exists"));
+
+                if (!destination.getTrip().getId().equals(id)) {
+                    throw new BadRequestException(
+                            "Destination does not belong to the trip.");
                 }
-                if(destinationPatchRequest2.getActivities() != null) {
-                    for(ActivityPatchRequest activityPatchRequest : destinationPatchRequest2.getActivities()) {
-                        if(activityPatchRequest.getActivityId() == null) throw new BadRequestException("Activity Id not provided");
-                        Activity activity = activityRepository.findById(activityPatchRequest.getActivityId()).orElseThrow(() -> new ResourceNotFoundException("Activity not found"));
-                        if(!activity.getDestination().getId().equals(destinationPatchRequest2.getDestinationId())) {
-                            throw new BadRequestException("Activity does not belong to Destination");
+
+                if (destinationRequest.getCity() != null) {
+                    destination.setCity(destinationRequest.getCity().trim());
+                }
+
+                if (destinationRequest.getStartDate() != null) {
+                    destination.setStartDate(destinationRequest.getStartDate());
+                }
+
+                if (destinationRequest.getEndDate() != null) {
+                    destination.setEndDate(destinationRequest.getEndDate());
+                }
+
+                if (destinationRequest.getActivities() != null) {
+
+                    for (ActivityPatchRequest activityRequest
+                            : destinationRequest.getActivities()) {
+
+                        if (activityRequest.getActivityId() == null) {
+                            throw new BadRequestException(
+                                    "Activity Id not provided");
                         }
-                        if(activityPatchRequest.getTitle() != null) {
-                            String title = activityPatchRequest.getTitle().trim();
-                            if(title.isBlank()) throw new BadRequestException("Title cannot be empty");
-                            activity.setTitle(title);
+
+                        Activity activity = activityRepository
+                                .findById(activityRequest.getActivityId())
+                                .orElseThrow(() ->
+                                        new ResourceNotFoundException(
+                                                "Activity not found"));
+
+                        if (!activity.getDestination().getId()
+                                .equals(destination.getId())) {
+                            throw new BadRequestException(
+                                    "Activity does not belong to Destination");
                         }
-                        if(activityPatchRequest.getDate() != null) {
-                            LocalDate date = activityPatchRequest.getDate();
-                            activity.setDate(date);
+
+                        if (activityRequest.getTitle() != null) {
+                            activity.setTitle(
+                                    activityRequest.getTitle().trim());
                         }
-                        if(activity.getDate().isBefore(destination.getStartDate()) || activity.getDate().isAfter(destination.getEndDate())) {
-                            throw new BadRequestException("Activity date not aligns with its Destination.");
+
+                        if (activityRequest.getDate() != null) {
+                            activity.setDate(activityRequest.getDate());
                         }
-                        if(activityPatchRequest.getCategory() != null) {
-                            activity.setCategory(activityPatchRequest.getCategory());
+
+                        if (activityRequest.getCategory() != null) {
+                            activity.setCategory(activityRequest.getCategory());
                         }
-                        if(activityPatchRequest.getCost() != null) {
-                            BigDecimal cost = activityPatchRequest.getCost();
-                            if(cost.compareTo(BigDecimal.ZERO) < 0) {
-                                throw new BadRequestException("Cost must be positive or zero.");
-                            }
-                            activity.setCost(cost);
+
+                        if (activityRequest.getCost() != null) {
+                            activity.setCost(activityRequest.getCost());
                         }
-                        if(activityPatchRequest.getStartTime() != null) {
-                            activity.setStartTime(activityPatchRequest.getStartTime());
+
+                        if (activityRequest.getStartTime() != null) {
+                            activity.setStartTime(
+                                    activityRequest.getStartTime());
                         }
-                        if(activityPatchRequest.getEndTime() != null) {
-                            activity.setEndTime(activityPatchRequest.getEndTime());
+
+                        if (activityRequest.getEndTime() != null) {
+                            activity.setEndTime(
+                                    activityRequest.getEndTime());
                         }
-                        if(!activity.getStartTime().isBefore(activity.getEndTime())) {
-                            throw new BadRequestException("Times added are invalid");
-                        }
-                        activityRepository.save(activity);
                     }
                 }
-                destinationRepository.save(destination);
             }
         }
-        Trip updatedTrip = tripRepository.save(trip);
+
+        // 3. Validate Trip's own fields
+        if (trip.getTitle().isBlank()) {
+            throw new BadRequestException("Title cannot be empty");
+        }
+
+        if (!trip.getCurrency().matches("[A-Z]{3}")) {
+            throw new BadRequestException("Invalid currency");
+        }
+
+        if (trip.getEndDate().isBefore(trip.getStartDate())) {
+            throw new BadRequestException("Invalid dates");
+        }
+
+        if (trip.getTotalBudget().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BadRequestException("Budget cannot be negative.");
+        }
+
+        if (trip.getTravellers() < 1) {
+            throw new BadRequestException(
+                    "At least 1 traveller required.");
+        }
+
+        // 4. Validate every Destination and Activity
+        List<Destination> allDestinations =
+                destinationRepository.findByTripId(id);
+
+        for (Destination destination : allDestinations) {
+
+            // Destination's own constraints
+            if (destination.getCity().isBlank()) {
+                throw new BadRequestException("Enter the city name.");
+            }
+
+            if (destination.getStartDate()
+                    .isAfter(destination.getEndDate())) {
+                throw new BadRequestException(
+                        "Invalid destination dates");
+            }
+
+            // Destination dates must fit within the final Trip dates
+            if (destination.getStartDate().isBefore(trip.getStartDate())
+                    || destination.getEndDate().isAfter(trip.getEndDate())) {
+                throw new BadRequestException(
+                        "Destination dates outside the trip dates");
+            }
+
+            List<Activity> allActivities =
+                    activityRepository.findByDestinationId(
+                            destination.getId());
+
+            for (Activity activity : allActivities) {
+
+                // Activity's own constraints
+                if (activity.getTitle().isBlank()) {
+                    throw new BadRequestException(
+                            "Activity title cannot be empty");
+                }
+
+                if (activity.getCost().compareTo(BigDecimal.ZERO) < 0) {
+                    throw new BadRequestException(
+                            "Cost must be positive or zero.");
+                }
+
+                if (!activity.getStartTime()
+                        .isBefore(activity.getEndTime())) {
+                    throw new BadRequestException(
+                            "Times added are invalid");
+                }
+
+                // Activity date must fit within the final Destination dates
+                if (activity.getDate().isBefore(destination.getStartDate())
+                        || activity.getDate().isAfter(destination.getEndDate())) {
+                    throw new BadRequestException(
+                            "Activity date not aligns with its Destination.");
+                }
+            }
+        }
+
+        // 5. Save Trip and return response
+        Trip updatedTrip = tripRepository.saveAndFlush(trip);
+
         return createTripResponse(updatedTrip);
     }
+
+
 }
