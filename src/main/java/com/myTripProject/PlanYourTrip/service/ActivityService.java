@@ -74,22 +74,26 @@ public class ActivityService {
         return activityRepository.saveAndFlush(activity);
     }
     public List<ActivityResponse> getActivities(Long destinationId) {
+        log.info("Fetching all activities of Destination {}", destinationId);
         destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("Destination does not exist"));
         List<Activity> activities = activityRepository.findByDestinationId(destinationId);
         List<ActivityResponse> activityResponses = new ArrayList<>();
         for(Activity activity : activities) {
             activityResponses.add(createActivityResponse(activity));
         }
+        log.info("All activities retrieved");
         return activityResponses;
     }
 
     public List<ActivityResponse> getActivities2(Long tripId) {
-        tripRepository.findById(tripId).orElseThrow(() -> new ResourceNotFoundException("Trip not exists"));
+        log.info("Finding all activities inside trip {}", tripId);
+        tripRepository.findById(tripId).orElseThrow(() -> new ResourceNotFoundException("Trip " + tripId + " not exists"));
         List<Activity> activities = activityRepository.findByDestinationTripId(tripId);
         List<ActivityResponse> activityResponses = new ArrayList<>();
         for(Activity activity : activities) {
             activityResponses.add(createActivityResponse(activity));
         }
+        log.info("All activities retrieved");
         return activityResponses;
     }
 
@@ -118,15 +122,18 @@ public class ActivityService {
         return activityResponse;
     }
     public void deleteActivityById(Long activityId) {
-        Activity activity = activityRepository.findById(activityId).orElseThrow(() -> new ResourceNotFoundException("No such activity exists"));
+        log.info("Deleting activity {}", activityId);
+        Activity activity = activityRepository.findById(activityId).orElseThrow(() -> new ResourceNotFoundException("Activity " + activityId + " not exists"));
         activityRepository.delete(activity);
+        log.info("Activity {} successfully deleted", activityId);
     }
     @Transactional
     public ActivityResponse updateActivityById(Long id, ActivityRequest request) {
 
+        log.info("Updating activity {}", id);
         Activity activity = activityRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Activity does not exist"
+                        "Activity " + id + " does not exist"
                 ));
 
         if (request.getTitle() != null) {
@@ -173,6 +180,8 @@ public class ActivityService {
 
         Activity updatedActivity = activityRepository.saveAndFlush(activity);
 
-        return createActivityResponse(updatedActivity);
+        ActivityResponse activityResponse = createActivityResponse(updatedActivity);
+        log.info("Activity {} successfully updated", id);
+        return activityResponse;
     }
 }

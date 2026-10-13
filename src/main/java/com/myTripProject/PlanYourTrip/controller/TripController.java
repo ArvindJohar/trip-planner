@@ -1,9 +1,6 @@
 package com.myTripProject.PlanYourTrip.controller;
 
-import com.myTripProject.PlanYourTrip.dto.BudgetSummaryResponse;
-import com.myTripProject.PlanYourTrip.dto.TripPatchRequest;
-import com.myTripProject.PlanYourTrip.dto.TripRequest;
-import com.myTripProject.PlanYourTrip.dto.TripResponse;
+import com.myTripProject.PlanYourTrip.dto.*;
 import com.myTripProject.PlanYourTrip.service.TripService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
