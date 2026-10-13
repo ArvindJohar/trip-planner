@@ -10,12 +10,14 @@ import com.myTripProject.PlanYourTrip.repository.ActivityRepository;
 import com.myTripProject.PlanYourTrip.repository.DestinationRepository;
 import com.myTripProject.PlanYourTrip.repository.TripRepository;
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 public class ActivityService {
     private final ActivityRepository activityRepository;
@@ -29,7 +31,7 @@ public class ActivityService {
     }
     public ActivityResponse createActivity(Long destinationId, ActivityRequest request) {
         Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("No destination with requested id exists"));
-        if (request.getEndTime().isBefore(request.getStartTime())) {
+        if (!request.getEndTime().isAfter(request.getStartTime())) {
             throw new BadRequestException(
                     "Activity end time must be after start time"
             );
@@ -48,8 +50,8 @@ public class ActivityService {
         activity.setDate(request.getDate());
         activity.setStartTime(request.getStartTime());
         activity.setEndTime(request.getEndTime());
-        activityRepository.save(activity);
-        return createActivityResponse(activity);
+        Activity updatedActivity = activityRepository.save(activity);
+        return createActivityResponse(updatedActivity);
     }
     public Activity createActivity2(Destination destination, ActivityRequest request) {
         if(!request.getEndTime().isAfter(request.getStartTime())) {
@@ -66,7 +68,7 @@ public class ActivityService {
         activity.setDate(request.getDate());
         activity.setStartTime(request.getStartTime());
         activity.setEndTime(request.getEndTime());
-        return activity;
+        return activityRepository.saveAndFlush(activity);
     }
     public List<ActivityResponse> getActivities(Long destinationId) {
         destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("Destination does not exist"));
@@ -89,15 +91,15 @@ public class ActivityService {
     }
 
     public ActivityResponse getActivityById(Long activityId) {
-        System.out.println("Fetching activity by ID: " + activityId);
+        log.info("Fetching activity by ID: " + activityId);
 
         Activity activity = activityRepository.findById(activityId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No activity with this id exists"));
 
-        System.out.println("Found activity ID: " + activity.getId());
-
-        return createActivityResponse(activity);
+        ActivityResponse activityResponse = createActivityResponse(activity);
+        log.info("Found activity ID: " + activity.getId());
+        return activityResponse;
     }
     public ActivityResponse createActivityResponse(Activity activity) {
         ActivityResponse activityResponse = new ActivityResponse();

@@ -11,6 +11,7 @@ import com.myTripProject.PlanYourTrip.repository.ActivityRepository;
 import com.myTripProject.PlanYourTrip.repository.DestinationRepository;
 import com.myTripProject.PlanYourTrip.repository.TripRepository;
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 
+@Slf4j
 @Service
 public class TripService {
 
@@ -39,6 +41,7 @@ public class TripService {
     @Transactional
     public TripResponse createTrip(TripRequest request) {
 
+        log.info("Creating a new trip...");
 
         if (request.getStartDate().isAfter(request.getEndDate())) {
             throw new BadRequestException(
@@ -54,17 +57,19 @@ public class TripService {
         trip.setTravellers(request.getTravellers());
         trip.setCurrency(request.getCurrency());
         trip.setTotalBudget(request.getTotalBudget());
-        tripRepository.save(trip);
+        Trip updatedTrip = tripRepository.saveAndFlush(trip);
 
         TripResponse tripResponse = new TripResponse();
-        tripResponse.setCountry(trip.getCountry());
-        tripResponse.setCurrency(trip.getCurrency());
-        tripResponse.setStartDate(trip.getStartDate());
-        tripResponse.setEndDate(trip.getEndDate());
-        tripResponse.setTitle(trip.getTitle());
-        tripResponse.setId(trip.getId());
-        tripResponse.setTravellers(trip.getTravellers());
-        tripResponse.setTotalBudget(trip.getTotalBudget());
+        tripResponse.setCountry(updatedTrip.getCountry());
+        tripResponse.setCurrency(updatedTrip.getCurrency());
+        tripResponse.setStartDate(updatedTrip.getStartDate());
+        tripResponse.setEndDate(updatedTrip.getEndDate());
+        tripResponse.setTitle(updatedTrip.getTitle());
+        tripResponse.setId(updatedTrip.getId());
+        tripResponse.setTravellers(updatedTrip.getTravellers());
+        tripResponse.setTotalBudget(updatedTrip.getTotalBudget());
+        tripResponse.setCreatedAt(updatedTrip.getCreatedAt());
+        tripResponse.setUpdatedAt(updatedTrip.getUpdatedAt());
         List<DestinationResponse> destinationResponses = new ArrayList<>();
 
         if (request.getDestinations() != null) {
@@ -86,13 +91,15 @@ public class TripService {
                 destination.setCity(destinationRequest.getCity());
                 destination.setStartDate(destinationRequest.getStartDate());
                 destination.setEndDate(destinationRequest.getEndDate());
-                destinationRepository.save(destination);
+                Destination destination1 = destinationRepository.save(destination);
 
                 DestinationResponse destinationResponse = new DestinationResponse();
-                destinationResponse.setId(destination.getId());
-                destinationResponse.setCity(destination.getCity());
-                destinationResponse.setStartDate(destination.getStartDate());
-                destinationResponse.setEndDate(destination.getEndDate());
+                destinationResponse.setId(destination1.getId());
+                destinationResponse.setCity(destination1.getCity());
+                destinationResponse.setStartDate(destination1.getStartDate());
+                destinationResponse.setEndDate(destination1.getEndDate());
+                destinationResponse.setCreatedAt(destination1.getCreatedAt());
+                destinationResponse.setUpdatedAt(destination1.getUpdatedAt());
                 List<ActivityResponse> activityResponses = new ArrayList<>();
 
                 if (destinationRequest.getActivities() != null) {
@@ -124,6 +131,7 @@ public class TripService {
             }
         }
         tripResponse.setDestinations(destinationResponses);
+        log.info("Successfully created the trip with id: {}", updatedTrip.getId());
         return tripResponse;
     }
 
@@ -171,6 +179,7 @@ public class TripService {
             LocalDate toDate,
             Pageable pageable) {
 
+        log.info("Retrieving all trips...");
         if ((fromDate == null) != (toDate == null)) {
             throw new BadRequestException(
                     "Both fromDate and toDate must be provided together");
@@ -200,7 +209,9 @@ public class TripService {
             trips = tripRepository.findAll(pageable);
         }
 
-        return trips.map(this::createTripResponse);
+        Page<TripResponse> tripResponses = trips.map(this::createTripResponse);
+        log.info("Successfully retrieved all trips");
+        return tripResponses;
     }
 
     private TripResponse createTripResponse(Trip trip) {
@@ -234,22 +245,27 @@ public class TripService {
     }
 
     public TripResponse getTripById(Long id) {
-
+        log.info("Retrieving trip: {}", id);
         Trip trip = tripRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Trip not found"
                 ));
-
-        return createTripResponse(trip);
+        TripResponse tripResponse = createTripResponse(trip);
+        log.info("Trip {} successfully retrieved", id);
+        return tripResponse;
     }
 
     public void deleteTripById(Long id) {
+        log.info("Deleting Trip: {}", id);
         Trip trip = tripRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("No such trip exists"));
         tripRepository.delete(trip);
+        log.info("Trip: {} successfully deleted", id);
     }
 
     @Transactional
     public TripResponse updateTripById(Long id, TripPatchRequest tripPatchRequest) {
+
+        log.info("Updating trip: {}...", id);
 
         Trip trip = tripRepository.findById(id)
                 .orElseThrow(() ->
@@ -452,8 +468,9 @@ public class TripService {
 
         // 5. Save Trip and return response
         Trip updatedTrip = tripRepository.saveAndFlush(trip);
-
-        return createTripResponse(updatedTrip);
+        TripResponse tripResponse = createTripResponse(updatedTrip);
+        log.info("Trip {} successfully updated.", id);
+        return tripResponse;
     }
 
 

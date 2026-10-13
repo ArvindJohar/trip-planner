@@ -10,12 +10,14 @@ import com.myTripProject.PlanYourTrip.repository.ActivityRepository;
 import com.myTripProject.PlanYourTrip.repository.DestinationRepository;
 import com.myTripProject.PlanYourTrip.repository.TripRepository;
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 public class DestinationService {
     private final DestinationRepository destinationRepository;
@@ -33,6 +35,8 @@ public class DestinationService {
     public DestinationResponse createDestination(
             Long tripId,
             DestinationRequest request) {
+
+        log.info("Creating new destination in Trip {}...", tripId);
 
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -54,17 +58,17 @@ public class DestinationService {
         destination.setStartDate(request.getStartDate());
         destination.setEndDate(request.getEndDate());
 
-        destinationRepository.save(destination);
+        Destination updatedDestination = destinationRepository.save(destination);
 
         List<ActivityResponse> activityResponses = new ArrayList<>();
 
         if (request.getActivities() != null) {
             for (ActivityRequest activityRequest : request.getActivities()) {
 
-                Activity activity = activityServiceBean.createActivity2(destination, activityRequest);
-                activityRepository.save(activity);
+                Activity activity = activityServiceBean.createActivity2(updatedDestination, activityRequest);
+                Activity updatedActivity = activityRepository.save(activity);
 
-                ActivityResponse activityResponse = activityServiceBean.createActivityResponse(activity);
+                ActivityResponse activityResponse = activityServiceBean.createActivityResponse(updatedActivity);
 
                 activityResponses.add(activityResponse);
             }
@@ -72,20 +76,24 @@ public class DestinationService {
 
         DestinationResponse response = new DestinationResponse();
 
-        response.setId(destination.getId());
-        response.setCity(destination.getCity());
-        response.setStartDate(destination.getStartDate());
-        response.setEndDate(destination.getEndDate());
+        response.setId(updatedDestination.getId());
+        response.setCity(updatedDestination.getCity());
+        response.setStartDate(updatedDestination.getStartDate());
+        response.setEndDate(updatedDestination.getEndDate());
+        response.setCreatedAt(updatedDestination.getCreatedAt());
+        response.setUpdatedAt(updatedDestination.getUpdatedAt());
         response.setActivities(activityResponses);
-
+        log.info("Destination successfully created with id: {}", updatedDestination.getId());
         return response;
     }
     public List<DestinationResponse> getDestinations(Long tripId) {
+        log.info("Retrieving all destinations inside Trip {}", tripId);
         List<Destination> destinations = destinationRepository.findByTripId(tripId);
         List<DestinationResponse> destinationResponses = new ArrayList<>();
         for(Destination destination : destinations) {
             destinationResponses.add(createDestinationResponse(destination));
         }
+        log.info("All destinations of Trip: {} retrieved", tripId);
         return destinationResponses;
     }
 
@@ -108,20 +116,29 @@ public class DestinationService {
     }
 
     public DestinationResponse getDestinationById(Long destinationId) {
+        log.info("Retrieving destination {}...", destinationId);
         Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("No destination with the requested id exists"));
-        return createDestinationResponse(destination);
+        DestinationResponse destinationResponse =  createDestinationResponse(destination);
+        log.info("Destination {} successfully retrieved.", destinationId);
+        return destinationResponse;
     }
     public void deleteDestinationById(Long destinationId) {
+        log.info("Removing destination {}", destinationId);
         Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("No such destination exists"));
         destinationRepository.delete(destination);
+        log.info("Destination {} successfully removed.", destinationId);
     }
     @Transactional
     public DestinationResponse updateDestinationById(
             Long destinationId, DestinationPatchRequest request) {
 
+        log.info("Updating destination: {}", destinationId);
         Destination destination = destinationRepository.findById(destinationId)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("Destination not exists"));
+                .orElseThrow(() -> {
+                    log.warn("Destination {} does not exist.", destinationId);
+                    return new ResourceNotFoundException("Destination not exists");
+                });
+
 
         // 1. Apply Destination updates
         if (request.getCity() != null) {
@@ -237,6 +254,8 @@ public class DestinationService {
         Destination updatedDestination =
                 destinationRepository.saveAndFlush(destination);
 
-        return createDestinationResponse(updatedDestination);
+        DestinationResponse destinationResponse = createDestinationResponse(updatedDestination);
+        log.info("Destination {} updated successfully.", destinationId);
+        return destinationResponse;
     }
 }
