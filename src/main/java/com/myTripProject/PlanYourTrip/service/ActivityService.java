@@ -81,7 +81,7 @@ public class ActivityService {
         for(Activity activity : activities) {
             activityResponses.add(createActivityResponse(activity));
         }
-        log.info("All activities retrieved");
+        log.info("All activities of Destination {} retrieved", destinationId);
         return activityResponses;
     }
 
@@ -93,7 +93,7 @@ public class ActivityService {
         for(Activity activity : activities) {
             activityResponses.add(createActivityResponse(activity));
         }
-        log.info("All activities retrieved");
+        log.info("All activities of trip {} retrieved", tripId);
         return activityResponses;
     }
 
