@@ -118,10 +118,25 @@ public class DestinationService {
         if(request.getCity() != null) destination.setCity(request.getCity());
         if(request.getStartDate() != null) destination.setStartDate(request.getStartDate());
         if(request.getEndDate() != null) destination.setEndDate(request.getEndDate());
+        if (destination.getStartDate().isAfter(destination.getEndDate())) {
+            throw new BadRequestException(
+                    "Start date cannot be after end date"
+            );
+        }
+        Trip trip = destination.getTrip();
+
+        if (destination.getStartDate().isBefore(trip.getStartDate())
+                || destination.getEndDate().isAfter(trip.getEndDate())) {
+            throw new BadRequestException(
+                    "Destination dates must lie within trip dates"
+            );
+        }
+
         if(request.getActivities() != null) {
             for(ActivityPatchRequest activityPatchRequest : request.getActivities()) {
                 if(activityPatchRequest.getActivityId() == null) throw new BadRequestException("Id not provided for an activity");
-
+                Activity activity = activityRepository.findById(activityPatchRequest.getActivityId()).orElseThrow(() -> new BadRequestException("Incorrect data found"));
+                if(!activity.getDestination().equals(destination)) throw new BadRequestException("Activity does not belong to this destination.");
                 if (activityPatchRequest.getTitle() != null && activityPatchRequest.getTitle().isBlank()) {
                     throw new BadRequestException("Title must not be blank");
                 }
@@ -129,8 +144,6 @@ public class DestinationService {
                         && activityPatchRequest.getCost().compareTo(BigDecimal.ZERO) < 0) {
                     throw new BadRequestException("Cost cannot be negative");
                 }
-
-                Activity activity = activityRepository.findById(activityPatchRequest.getActivityId()).orElseThrow(() -> new BadRequestException("Incorrect data found"));
                 if(activityPatchRequest.getStartTime() != null) activity.setStartTime(activityPatchRequest.getStartTime());
                 if(activityPatchRequest.getEndTime() != null) activity.setEndTime(activityPatchRequest.getEndTime());
                 if(activityPatchRequest.getCost() != null) activity.setCost(activityPatchRequest.getCost());
@@ -138,6 +151,13 @@ public class DestinationService {
                 if(activityPatchRequest.getCategory() != null) activity.setCategory(activityPatchRequest.getCategory());
                 if(activityPatchRequest.getDate() != null) activity.setDate(activityPatchRequest.getDate());
                 if(!activity.getStartTime().isBefore(activity.getEndTime())) throw new BadRequestException("Start time must be before End time");
+
+                if (activity.getDate().isBefore(destination.getStartDate())
+                        || activity.getDate().isAfter(destination.getEndDate())) {
+                    throw new BadRequestException(
+                            "Activity date must lie within destination dates"
+                    );
+                }
                 activityRepository.save(activity);
             }
         }

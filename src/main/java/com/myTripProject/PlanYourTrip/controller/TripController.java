@@ -1,6 +1,7 @@
 package com.myTripProject.PlanYourTrip.controller;
 
 import com.myTripProject.PlanYourTrip.dto.BudgetSummaryResponse;
+import com.myTripProject.PlanYourTrip.dto.TripPatchRequest;
 import com.myTripProject.PlanYourTrip.dto.TripRequest;
 import com.myTripProject.PlanYourTrip.dto.TripResponse;
 import com.myTripProject.PlanYourTrip.service.TripService;
@@ -11,7 +12,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/trips")
@@ -53,5 +53,10 @@ public class TripController {
     @GetMapping("/{id}/budget-summary")
     public BudgetSummaryResponse getBudgetSummary(@PathVariable Long id) {
         return tripService.getBudgetSummary(id);
+    }
+
+    @PatchMapping("/{id}")
+    public TripResponse updateTripById(@PathVariable Long id, @RequestBody TripPatchRequest tripPatchRequest) {
+        return tripService.updateTripById(id, tripPatchRequest);
     }
 }
