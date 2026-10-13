@@ -28,6 +28,7 @@ public class DestinationService {
         this.activityRepository = activityRepository;
         this.activityServiceBean = activityServiceBean;
     }
+    //abc
     @Transactional
     public DestinationResponse createDestination(
             Long tripId,
