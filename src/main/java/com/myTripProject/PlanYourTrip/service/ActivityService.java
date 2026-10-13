@@ -30,6 +30,7 @@ public class ActivityService {
         this.tripRepository = tripRepository;
     }
     public ActivityResponse createActivity(Long destinationId, ActivityRequest request) {
+        log.info("Creating new activity...");
         Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("No destination with requested id exists"));
         if (!request.getEndTime().isAfter(request.getStartTime())) {
             throw new BadRequestException(
@@ -51,7 +52,9 @@ public class ActivityService {
         activity.setStartTime(request.getStartTime());
         activity.setEndTime(request.getEndTime());
         Activity updatedActivity = activityRepository.save(activity);
-        return createActivityResponse(updatedActivity);
+        ActivityResponse activityResponse = createActivityResponse(updatedActivity);
+        log.info("Activity successfully created with id {}.", updatedActivity.getId());
+        return activityResponse;
     }
     public Activity createActivity2(Destination destination, ActivityRequest request) {
         if(!request.getEndTime().isAfter(request.getStartTime())) {
