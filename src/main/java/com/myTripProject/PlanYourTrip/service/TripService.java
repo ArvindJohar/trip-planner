@@ -27,14 +27,12 @@ public class TripService {
     private final TripRepository tripRepository;
     private final DestinationRepository destinationRepository;
     private final ActivityRepository activityRepository;
-    private final ActivityService activityServiceBean;
     private final DestinationService destinationServiceBean;
 
-    public TripService(TripRepository tripRepository, DestinationRepository destinationRepository, ActivityRepository activityRepository, ActivityService activityServiceBean, DestinationService destinationServiceBean) {
+    public TripService(TripRepository tripRepository, DestinationRepository destinationRepository, ActivityRepository activityRepository, DestinationService destinationServiceBean) {
         this.tripRepository = tripRepository;
         this.destinationRepository = destinationRepository;
         this.activityRepository = activityRepository;
-        this.activityServiceBean = activityServiceBean;
         this.destinationServiceBean = destinationServiceBean;
     }
 
@@ -59,78 +57,12 @@ public class TripService {
         trip.setTotalBudget(request.getTotalBudget());
         Trip updatedTrip = tripRepository.saveAndFlush(trip);
 
-        TripResponse tripResponse = new TripResponse();
-        tripResponse.setCountry(updatedTrip.getCountry());
-        tripResponse.setCurrency(updatedTrip.getCurrency());
-        tripResponse.setStartDate(updatedTrip.getStartDate());
-        tripResponse.setEndDate(updatedTrip.getEndDate());
-        tripResponse.setTitle(updatedTrip.getTitle());
-        tripResponse.setId(updatedTrip.getId());
-        tripResponse.setTravellers(updatedTrip.getTravellers());
-        tripResponse.setTotalBudget(updatedTrip.getTotalBudget());
-        tripResponse.setCreatedAt(updatedTrip.getCreatedAt());
-        tripResponse.setUpdatedAt(updatedTrip.getUpdatedAt());
-        List<DestinationResponse> destinationResponses = new ArrayList<>();
-
         if (request.getDestinations() != null) {
-
             for (DestinationRequest destinationRequest : request.getDestinations()) {
-                if (destinationRequest.getStartDate().isBefore(trip.getStartDate())
-                        || destinationRequest.getEndDate().isAfter(trip.getEndDate())) {
-
-                    throw new BadRequestException(
-                            "Destination dates must fall within trip dates"
-                    );
-                }
-                if(destinationRequest.getStartDate().isAfter(destinationRequest.getEndDate())) {
-                    throw new BadRequestException("Destination dates are invalid.");
-                }
-                Destination destination = new Destination();
-
-                destination.setTrip(trip);
-                destination.setCity(destinationRequest.getCity());
-                destination.setStartDate(destinationRequest.getStartDate());
-                destination.setEndDate(destinationRequest.getEndDate());
-                Destination destination1 = destinationRepository.save(destination);
-
-                DestinationResponse destinationResponse = new DestinationResponse();
-                destinationResponse.setId(destination1.getId());
-                destinationResponse.setCity(destination1.getCity());
-                destinationResponse.setStartDate(destination1.getStartDate());
-                destinationResponse.setEndDate(destination1.getEndDate());
-                destinationResponse.setCreatedAt(destination1.getCreatedAt());
-                destinationResponse.setUpdatedAt(destination1.getUpdatedAt());
-                List<ActivityResponse> activityResponses = new ArrayList<>();
-
-                if (destinationRequest.getActivities() != null) {
-
-                    for (ActivityRequest activityRequest : destinationRequest.getActivities()) {
-
-                        if (activityRequest.getDate().isBefore(destination.getStartDate())
-                                || activityRequest.getDate().isAfter(destination.getEndDate())) {
-
-                            throw new BadRequestException(
-                                    "Activity date must fall within destination dates"
-                            );
-                        }
-
-                        if(!activityRequest.getEndTime().isAfter(activityRequest.getStartTime())) {
-                            throw new BadRequestException("Invalid time interval");
-                        }
-
-                        Activity activity = activityServiceBean.createActivity2(destination, activityRequest);
-                        activityRepository.save(activity);
-
-                        ActivityResponse activityResponse = activityServiceBean.createActivityResponse(activity);
-
-                        activityResponses.add(activityResponse);
-                    }
-                }
-                destinationResponse.setActivities(activityResponses);
-                destinationResponses.add(destinationResponse);
+                destinationServiceBean.createDestination(updatedTrip.getId(), destinationRequest);
             }
         }
-        tripResponse.setDestinations(destinationResponses);
+        TripResponse tripResponse = createTripResponse(updatedTrip);
         log.info("Successfully created the trip with id: {}", updatedTrip.getId());
         return tripResponse;
     }

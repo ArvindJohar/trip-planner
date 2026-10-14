@@ -60,29 +60,13 @@ public class DestinationService {
 
         Destination updatedDestination = destinationRepository.save(destination);
 
-        List<ActivityResponse> activityResponses = new ArrayList<>();
-
         if (request.getActivities() != null) {
             for (ActivityRequest activityRequest : request.getActivities()) {
-
-                Activity activity = activityServiceBean.createActivity2(updatedDestination, activityRequest);
-                Activity updatedActivity = activityRepository.save(activity);
-
-                ActivityResponse activityResponse = activityServiceBean.createActivityResponse(updatedActivity);
-
-                activityResponses.add(activityResponse);
+                activityServiceBean.createActivity(updatedDestination.getId(), activityRequest);
             }
         }
 
-        DestinationResponse response = new DestinationResponse();
-
-        response.setId(updatedDestination.getId());
-        response.setCity(updatedDestination.getCity());
-        response.setStartDate(updatedDestination.getStartDate());
-        response.setEndDate(updatedDestination.getEndDate());
-        response.setCreatedAt(updatedDestination.getCreatedAt());
-        response.setUpdatedAt(updatedDestination.getUpdatedAt());
-        response.setActivities(activityResponses);
+        DestinationResponse response = createDestinationResponse(updatedDestination);
         log.info("Destination successfully created with id: {}", updatedDestination.getId());
         return response;
     }

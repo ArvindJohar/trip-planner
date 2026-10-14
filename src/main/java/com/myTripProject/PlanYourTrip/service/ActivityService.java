@@ -29,6 +29,7 @@ public class ActivityService {
         this.destinationRepository = destinationRepository;
         this.tripRepository = tripRepository;
     }
+    @Transactional
     public ActivityResponse createActivity(Long destinationId, ActivityRequest request) {
         log.info("Creating new activity...");
         Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("No destination with requested id exists"));
@@ -53,25 +54,8 @@ public class ActivityService {
         activity.setEndTime(request.getEndTime());
         Activity updatedActivity = activityRepository.save(activity);
         ActivityResponse activityResponse = createActivityResponse(updatedActivity);
-        log.info("Activity successfully created with id {}.", updatedActivity.getId());
+        log.info("Activity successfully created with id: {}", updatedActivity.getId());
         return activityResponse;
-    }
-    public Activity createActivity2(Destination destination, ActivityRequest request) {
-        if(!request.getEndTime().isAfter(request.getStartTime())) {
-            throw new BadRequestException("Start time cannot be after End time");
-        }
-        if(request.getDate().isBefore(destination.getStartDate()) || request.getDate().isAfter(destination.getEndDate())) {
-            throw new BadRequestException("Date does not lie within Destination dates");
-        }
-        Activity activity = new Activity();
-        activity.setDestination(destination);
-        activity.setCategory(request.getCategory());
-        activity.setCost(request.getCost());
-        activity.setTitle(request.getTitle());
-        activity.setDate(request.getDate());
-        activity.setStartTime(request.getStartTime());
-        activity.setEndTime(request.getEndTime());
-        return activityRepository.saveAndFlush(activity);
     }
     public List<ActivityResponse> getActivities(Long destinationId) {
         log.info("Fetching all activities of Destination {}", destinationId);
