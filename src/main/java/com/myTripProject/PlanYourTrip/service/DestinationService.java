@@ -12,8 +12,6 @@ import com.myTripProject.PlanYourTrip.repository.TripRepository;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -114,7 +112,7 @@ public class DestinationService {
     }
     @Transactional
     public DestinationResponse updateDestinationById(
-            Long destinationId, DestinationPatchRequest request) {
+            Long destinationId, DestinationPatchRequest2 request) {
 
         log.info("Updating destination: {}", destinationId);
         Destination destination = destinationRepository.findById(destinationId)
@@ -140,48 +138,22 @@ public class DestinationService {
         // 2. Apply Activity updates
         if (request.getActivities() != null) {
 
-            for (ActivityPatchRequest activityRequest : request.getActivities()) {
+            for (ActivityPatchRequest activityPatchRequest : request.getActivities()) {
 
-                if (activityRequest.getActivityId() == null) {
+                if (activityPatchRequest.getActivityId() == null) {
                     throw new BadRequestException(
                             "Id not provided for an activity");
                 }
 
-                Activity activity = activityRepository
-                        .findById(activityRequest.getActivityId())
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Activity not found"));
+                ActivityPatchRequest2 activityPatchRequest2 = new ActivityPatchRequest2();
+                activityPatchRequest2.setCategory(activityPatchRequest.getCategory());
+                activityPatchRequest2.setCost(activityPatchRequest.getCost());
+                activityPatchRequest2.setTitle(activityPatchRequest.getTitle());
+                activityPatchRequest2.setDate(activityPatchRequest.getDate());
+                activityPatchRequest2.setStartTime(activityPatchRequest.getStartTime());
+                activityPatchRequest2.setEndTime(activityPatchRequest.getEndTime());
 
-                if (!activity.getDestination().getId()
-                        .equals(destinationId)) {
-                    throw new BadRequestException(
-                            "Activity does not belong to this destination.");
-                }
-
-                if (activityRequest.getStartTime() != null) {
-                    activity.setStartTime(activityRequest.getStartTime());
-                }
-
-                if (activityRequest.getEndTime() != null) {
-                    activity.setEndTime(activityRequest.getEndTime());
-                }
-
-                if (activityRequest.getCost() != null) {
-                    activity.setCost(activityRequest.getCost());
-                }
-
-                if (activityRequest.getTitle() != null) {
-                    activity.setTitle(activityRequest.getTitle().trim());
-                }
-
-                if (activityRequest.getCategory() != null) {
-                    activity.setCategory(activityRequest.getCategory());
-                }
-
-                if (activityRequest.getDate() != null) {
-                    activity.setDate(activityRequest.getDate());
-                }
+                activityServiceBean.updateActivityById(activityPatchRequest.getActivityId(), activityPatchRequest2);
             }
         }
 
@@ -210,23 +182,6 @@ public class DestinationService {
 
         for (Activity activity : allActivities) {
 
-            // Activity's own constraints
-            if (activity.getTitle().isBlank()) {
-                throw new BadRequestException(
-                        "Title must not be blank");
-            }
-
-            if (activity.getCost().compareTo(BigDecimal.ZERO) < 0) {
-                throw new BadRequestException(
-                        "Cost cannot be negative");
-            }
-
-            if (!activity.getStartTime().isBefore(activity.getEndTime())) {
-                throw new BadRequestException(
-                        "Start time must be before End time");
-            }
-
-            // Activity date must fit within the final Destination dates
             if (activity.getDate().isBefore(destination.getStartDate())
                     || activity.getDate().isAfter(destination.getEndDate())) {
                 throw new BadRequestException(

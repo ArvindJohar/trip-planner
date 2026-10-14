@@ -1,6 +1,4 @@
 package com.myTripProject.PlanYourTrip.dto;
-
-import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -12,9 +10,6 @@ import java.util.List;
 @Setter
 @NoArgsConstructor
 public class DestinationPatchRequest2 {
-
-    @NotNull
-    private Long destinationId;
 
     private String city;
 

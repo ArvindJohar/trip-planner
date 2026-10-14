@@ -18,5 +18,5 @@ public class TripPatchRequest {
     private Integer travellers;
     private String currency;
     private BigDecimal totalBudget;
-    private List<DestinationPatchRequest2> destinations;
+    private List<DestinationPatchRequest> destinations;
 }

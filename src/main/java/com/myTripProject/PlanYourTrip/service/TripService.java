@@ -236,87 +236,20 @@ public class TripService {
         // 2. Apply Destination and Activity updates
         if (tripPatchRequest.getDestinations() != null) {
 
-            for (DestinationPatchRequest2 destinationRequest
+            for (DestinationPatchRequest destinationPatchRequest
                     : tripPatchRequest.getDestinations()) {
 
-                if (destinationRequest.getDestinationId() == null) {
+                if (destinationPatchRequest.getDestinationId() == null) {
                     throw new BadRequestException(
                             "Destination Id not mentioned.");
                 }
 
-                Destination destination = destinationRepository
-                        .findById(destinationRequest.getDestinationId())
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Destination not exists"));
-
-                if (!destination.getTrip().getId().equals(id)) {
-                    throw new BadRequestException(
-                            "Destination does not belong to the trip.");
-                }
-
-                if (destinationRequest.getCity() != null) {
-                    destination.setCity(destinationRequest.getCity().trim());
-                }
-
-                if (destinationRequest.getStartDate() != null) {
-                    destination.setStartDate(destinationRequest.getStartDate());
-                }
-
-                if (destinationRequest.getEndDate() != null) {
-                    destination.setEndDate(destinationRequest.getEndDate());
-                }
-
-                if (destinationRequest.getActivities() != null) {
-
-                    for (ActivityPatchRequest activityRequest
-                            : destinationRequest.getActivities()) {
-
-                        if (activityRequest.getActivityId() == null) {
-                            throw new BadRequestException(
-                                    "Activity Id not provided");
-                        }
-
-                        Activity activity = activityRepository
-                                .findById(activityRequest.getActivityId())
-                                .orElseThrow(() ->
-                                        new ResourceNotFoundException(
-                                                "Activity not found"));
-
-                        if (!activity.getDestination().getId()
-                                .equals(destination.getId())) {
-                            throw new BadRequestException(
-                                    "Activity does not belong to Destination");
-                        }
-
-                        if (activityRequest.getTitle() != null) {
-                            activity.setTitle(
-                                    activityRequest.getTitle().trim());
-                        }
-
-                        if (activityRequest.getDate() != null) {
-                            activity.setDate(activityRequest.getDate());
-                        }
-
-                        if (activityRequest.getCategory() != null) {
-                            activity.setCategory(activityRequest.getCategory());
-                        }
-
-                        if (activityRequest.getCost() != null) {
-                            activity.setCost(activityRequest.getCost());
-                        }
-
-                        if (activityRequest.getStartTime() != null) {
-                            activity.setStartTime(
-                                    activityRequest.getStartTime());
-                        }
-
-                        if (activityRequest.getEndTime() != null) {
-                            activity.setEndTime(
-                                    activityRequest.getEndTime());
-                        }
-                    }
-                }
+                DestinationPatchRequest2 destinationPatchRequest2 = new DestinationPatchRequest2();
+                destinationPatchRequest2.setActivities(destinationPatchRequest.getActivities());
+                destinationPatchRequest2.setCity(destinationPatchRequest.getCity());
+                destinationPatchRequest2.setStartDate(destinationPatchRequest.getStartDate());
+                destinationPatchRequest2.setEndDate(destinationPatchRequest.getEndDate());
+                destinationServiceBean.updateDestinationById(destinationPatchRequest.getDestinationId(), destinationPatchRequest2);
             }
         }
 

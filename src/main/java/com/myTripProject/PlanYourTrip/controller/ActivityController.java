@@ -1,5 +1,6 @@
 package com.myTripProject.PlanYourTrip.controller;
 
+import com.myTripProject.PlanYourTrip.dto.ActivityPatchRequest2;
 import com.myTripProject.PlanYourTrip.dto.ActivityRequest;
 import com.myTripProject.PlanYourTrip.dto.ActivityResponse;
 import com.myTripProject.PlanYourTrip.service.ActivityService;
@@ -43,7 +44,7 @@ public class ActivityController {
     }
 
     @PatchMapping("/activities/{activityId}")
-    public ActivityResponse updateActivityById(@PathVariable Long activityId, @RequestBody ActivityRequest request) {
+    public ActivityResponse updateActivityById(@PathVariable Long activityId, @RequestBody ActivityPatchRequest2 request) {
         return activityService.updateActivityById(activityId, request);
     }
 }

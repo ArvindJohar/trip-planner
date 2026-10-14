@@ -1,5 +1,5 @@
 package com.myTripProject.PlanYourTrip.service;
-
+import com.myTripProject.PlanYourTrip.dto.ActivityPatchRequest2;
 import com.myTripProject.PlanYourTrip.dto.ActivityRequest;
 import com.myTripProject.PlanYourTrip.dto.ActivityResponse;
 import com.myTripProject.PlanYourTrip.entity.Activity;
@@ -112,7 +112,7 @@ public class ActivityService {
         log.info("Activity {} successfully deleted", activityId);
     }
     @Transactional
-    public ActivityResponse updateActivityById(Long id, ActivityRequest request) {
+    public ActivityResponse updateActivityById(Long id, ActivityPatchRequest2 request) {
 
         log.info("Updating activity {}", id);
         Activity activity = activityRepository.findById(id)

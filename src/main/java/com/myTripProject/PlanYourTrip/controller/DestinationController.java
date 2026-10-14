@@ -1,6 +1,5 @@
 package com.myTripProject.PlanYourTrip.controller;
-
-import com.myTripProject.PlanYourTrip.dto.DestinationPatchRequest;
+import com.myTripProject.PlanYourTrip.dto.DestinationPatchRequest2;
 import com.myTripProject.PlanYourTrip.dto.DestinationRequest;
 import com.myTripProject.PlanYourTrip.dto.DestinationResponse;
 import com.myTripProject.PlanYourTrip.service.DestinationService;
@@ -40,7 +39,7 @@ public class DestinationController {
     }
 
     @PatchMapping("/destinations/{destinationId}")
-        public DestinationResponse updateDestinationById(@PathVariable Long destinationId, @RequestBody DestinationPatchRequest request) {
-            return destinationService.updateDestinationById(destinationId,request);
+        public DestinationResponse updateDestinationById(@PathVariable Long destinationId, @RequestBody DestinationPatchRequest2 request) {
+            return destinationService.updateDestinationById(destinationId, request);
         }
 }
