@@ -244,6 +244,16 @@ public class TripService {
                             "Destination Id not mentioned.");
                 }
 
+                Destination destination = destinationRepository
+                        .findById(destinationPatchRequest.getDestinationId())
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException("Destination not exists"));
+
+                if (!destination.getTrip().getId().equals(id)) {
+                    throw new BadRequestException(
+                            "Destination does not belong to this trip");
+                }
+
                 DestinationPatchRequest2 destinationPatchRequest2 = new DestinationPatchRequest2();
                 destinationPatchRequest2.setActivities(destinationPatchRequest.getActivities());
                 destinationPatchRequest2.setCity(destinationPatchRequest.getCity());
@@ -280,54 +290,10 @@ public class TripService {
                 destinationRepository.findByTripId(id);
 
         for (Destination destination : allDestinations) {
-
-            // Destination's own constraints
-            if (destination.getCity().isBlank()) {
-                throw new BadRequestException("Enter the city name.");
-            }
-
-            if (destination.getStartDate()
-                    .isAfter(destination.getEndDate())) {
-                throw new BadRequestException(
-                        "Invalid destination dates");
-            }
-
-            // Destination dates must fit within the final Trip dates
             if (destination.getStartDate().isBefore(trip.getStartDate())
                     || destination.getEndDate().isAfter(trip.getEndDate())) {
                 throw new BadRequestException(
                         "Destination dates outside the trip dates");
-            }
-
-            List<Activity> allActivities =
-                    activityRepository.findByDestinationId(
-                            destination.getId());
-
-            for (Activity activity : allActivities) {
-
-                // Activity's own constraints
-                if (activity.getTitle().isBlank()) {
-                    throw new BadRequestException(
-                            "Activity title cannot be empty");
-                }
-
-                if (activity.getCost().compareTo(BigDecimal.ZERO) < 0) {
-                    throw new BadRequestException(
-                            "Cost must be positive or zero.");
-                }
-
-                if (!activity.getStartTime()
-                        .isBefore(activity.getEndTime())) {
-                    throw new BadRequestException(
-                            "Times added are invalid");
-                }
-
-                // Activity date must fit within the final Destination dates
-                if (activity.getDate().isBefore(destination.getStartDate())
-                        || activity.getDate().isAfter(destination.getEndDate())) {
-                    throw new BadRequestException(
-                            "Activity date not aligns with its Destination.");
-                }
             }
         }
 

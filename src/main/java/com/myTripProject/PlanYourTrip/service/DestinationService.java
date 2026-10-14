@@ -116,10 +116,7 @@ public class DestinationService {
 
         log.info("Updating destination: {}", destinationId);
         Destination destination = destinationRepository.findById(destinationId)
-                .orElseThrow(() -> {
-                    log.warn("Destination {} does not exist.", destinationId);
-                    return new ResourceNotFoundException("Destination not exists");
-                });
+                .orElseThrow(() -> new ResourceNotFoundException("Destination " + destinationId + " not exists"));
 
 
         // 1. Apply Destination updates
@@ -143,6 +140,16 @@ public class DestinationService {
                 if (activityPatchRequest.getActivityId() == null) {
                     throw new BadRequestException(
                             "Id not provided for an activity");
+                }
+
+                Activity activity = activityRepository
+                        .findById(activityPatchRequest.getActivityId())
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException("Activity not exists"));
+
+                if (!activity.getDestination().getId().equals(destinationId)) {
+                    throw new BadRequestException(
+                            "Activity does not belong to this destination");
                 }
 
                 ActivityPatchRequest2 activityPatchRequest2 = new ActivityPatchRequest2();
