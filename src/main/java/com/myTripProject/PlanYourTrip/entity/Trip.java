@@ -25,7 +25,6 @@ public class Trip {
     @Column(nullable = false)
     private String title;
 
-    @Column(nullable = false)
     private String country;
 
     @Column(nullable = false)

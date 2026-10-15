@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 
 @Slf4j
@@ -75,7 +76,7 @@ public class TripService {
                 ));
 
         List<Activity> activities =
-                activityRepository.findByDestinationTripId(tripId);
+                activityRepository.findByDestinationTripIdOrderByDateAscStartTimeAscSortOrderAsc(tripId);
 
         BigDecimal spent = BigDecimal.ZERO;
 
@@ -160,14 +161,25 @@ public class TripService {
         response.setTotalBudget(trip.getTotalBudget());
         response.setCreatedAt(trip.getCreatedAt());
         response.setUpdatedAt(trip.getUpdatedAt());
+
         List<Destination> destinations =
-                destinationRepository.findByTripId(trip.getId());
+                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(
+                        trip.getId());
+
+        // Add trip summary fields
+        response.setDestinationCount(destinations.size());
+
+        BudgetSummaryResponse budgetSummary =
+                getBudgetSummary(trip.getId());
+
+        response.setSpent(budgetSummary.getSpent());
 
         List<DestinationResponse> destinationResponses = new ArrayList<>();
 
         for (Destination destination : destinations) {
+            DestinationResponse destinationResponse =
+                    destinationServiceBean.createDestinationResponse(destination);
 
-            DestinationResponse destinationResponse = destinationServiceBean.createDestinationResponse(destination);
             destinationResponses.add(destinationResponse);
         }
 
@@ -240,33 +252,91 @@ public class TripService {
                     : tripPatchRequest.getDestinations()) {
 
                 if (destinationPatchRequest.getDestinationId() == null) {
-                    throw new BadRequestException(
-                            "Destination Id not mentioned.");
+
+                    // Create a new destination
+                    if (destinationPatchRequest.getCountry() == null
+                            || destinationPatchRequest.getCountry().isBlank()) {
+                        throw new BadRequestException(
+                                "Country is required for a destination"
+                        );
+                    }
+
+                    if (destinationPatchRequest.getCity() == null
+                            || destinationPatchRequest.getCity().isBlank()) {
+                        throw new BadRequestException(
+                                "City is required for a destination"
+                        );
+                    }
+
+                    DestinationRequest destinationRequest =
+                            new DestinationRequest();
+
+                    destinationRequest.setCountry(
+                            destinationPatchRequest.getCountry()
+                    );
+                    destinationRequest.setCity(
+                            destinationPatchRequest.getCity()
+                    );
+
+                    // Initial days are rebalanced by createDestination().
+                    destinationRequest.setDays(
+                            destinationPatchRequest.getDays() != null
+                                    ? destinationPatchRequest.getDays()
+                                    : 1
+                    );
+
+                    destinationServiceBean.createDestination(
+                            id,
+                            destinationRequest
+                    );
+
+                } else {
+
+                    // Update an existing destination
+                    Destination destination = destinationRepository
+                            .findById(destinationPatchRequest.getDestinationId())
+                            .orElseThrow(() -> new ResourceNotFoundException(
+                                    "Destination not exists"
+                            ));
+
+                    if (!destination.getTrip().getId().equals(id)) {
+                        throw new BadRequestException(
+                                "Destination does not belong to this trip"
+                        );
+                    }
+
+                    DestinationPatchRequest2 destinationPatchRequest2 =
+                            new DestinationPatchRequest2();
+
+                    destinationPatchRequest2.setCountry(
+                            destinationPatchRequest.getCountry()
+                    );
+                    destinationPatchRequest2.setCity(
+                            destinationPatchRequest.getCity()
+                    );
+                    destinationPatchRequest2.setDays(
+                            destinationPatchRequest.getDays()
+                    );
+                    destinationPatchRequest2.setSortOrder(
+                            destinationPatchRequest.getSortOrder()
+                    );
+                    destinationPatchRequest2.setActivities(
+                            destinationPatchRequest.getActivities()
+                    );
+
+                    destinationServiceBean.updateDestinationById(
+                            destinationPatchRequest.getDestinationId(),
+                            destinationPatchRequest2
+                    );
                 }
-
-                Destination destination = destinationRepository
-                        .findById(destinationPatchRequest.getDestinationId())
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException("Destination not exists"));
-
-                if (!destination.getTrip().getId().equals(id)) {
-                    throw new BadRequestException(
-                            "Destination does not belong to this trip");
-                }
-
-                DestinationPatchRequest2 destinationPatchRequest2 = new DestinationPatchRequest2();
-                destinationPatchRequest2.setActivities(destinationPatchRequest.getActivities());
-                destinationPatchRequest2.setCity(destinationPatchRequest.getCity());
-                destinationPatchRequest2.setStartDate(destinationPatchRequest.getStartDate());
-                destinationPatchRequest2.setEndDate(destinationPatchRequest.getEndDate());
-                destinationServiceBean.updateDestinationById(destinationPatchRequest.getDestinationId(), destinationPatchRequest2);
             }
         }
 
         // 3. Validate Trip's own fields
         if (trip.getTitle().isBlank()) {
-            throw new BadRequestException("Title cannot be empty");
+            throw new BadRequestException("Title field cannot be empty");
         }
+
 
         if (!trip.getCurrency().matches("[A-Z]{3}")) {
             throw new BadRequestException("Invalid currency");
@@ -276,8 +346,8 @@ public class TripService {
             throw new BadRequestException("Invalid dates");
         }
 
-        if (trip.getTotalBudget().compareTo(BigDecimal.ZERO) < 0) {
-            throw new BadRequestException("Budget cannot be negative.");
+        if (trip.getTotalBudget().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BadRequestException("Budget must be positive.");
         }
 
         if (trip.getTravellers() < 1) {
@@ -285,9 +355,11 @@ public class TripService {
                     "At least 1 traveller required.");
         }
 
+        destinationServiceBean.refreshDestinationDates(id);
+
         // 4. Validate every Destination and Activity
         List<Destination> allDestinations =
-                destinationRepository.findByTripId(id);
+                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(id);
 
         for (Destination destination : allDestinations) {
             if (destination.getStartDate().isBefore(trip.getStartDate())
@@ -299,10 +371,10 @@ public class TripService {
 
         // 5. Save Trip and return response
         Trip updatedTrip = tripRepository.saveAndFlush(trip);
+
         TripResponse tripResponse = createTripResponse(updatedTrip);
         log.info("Trip {} successfully updated.", id);
         return tripResponse;
     }
-
 
 }

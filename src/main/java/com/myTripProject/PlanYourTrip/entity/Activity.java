@@ -27,6 +27,9 @@ public class Activity {
     @JoinColumn(name="destination_id", nullable = false)
     private Destination destination;
 
+    @Column(name = "sort_order", nullable = false)
+    private Integer sortOrder;
+
     @Column(nullable = false)
     private String title;
 

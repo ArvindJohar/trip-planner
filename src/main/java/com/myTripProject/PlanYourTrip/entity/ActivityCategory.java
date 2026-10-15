@@ -4,5 +4,8 @@ public enum ActivityCategory {
     STAY,
     TRANSPORT,
     FOOD,
-    SIGHTSEEING
+    SIGHTSEEING,
+    ADVENTURE,
+    SHOPPING,
+    OTHER
 }

@@ -20,9 +20,6 @@ public class ActivityRequest {
     private String title;
 
     @NotNull
-    private LocalDate date;
-
-    @NotNull
     private ActivityCategory category;
 
     @NotNull

@@ -22,6 +22,7 @@ public class ActivityPatchRequest {
     @NotNull
     private Long activityId;
 
+    private Integer sortOrder;
     private String title;
     private LocalDate date;
     private ActivityCategory category;

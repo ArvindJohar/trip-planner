@@ -13,6 +13,7 @@ import java.time.LocalTime;
 @Setter
 @NoArgsConstructor
 public class ActivityPatchRequest2 {
+    private Integer sortOrder;
     private String title;
     private LocalDate date;
     private ActivityCategory category;

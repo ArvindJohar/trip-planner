@@ -1,11 +1,11 @@
 package com.myTripProject.PlanYourTrip.dto;
 
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDate;
 import java.util.List;
 
 @Getter
@@ -13,14 +13,18 @@ import java.util.List;
 @NoArgsConstructor
 public class DestinationPatchRequest {
 
-    @NotNull
+    @Positive(message = "Destination id must be positive")
     private Long destinationId;
+
+    private String country;
 
     private String city;
 
-    private LocalDate startDate;
+    @Positive(message = "Destination days must be positive")
+    private Integer days;
 
-    private LocalDate endDate;
+    @PositiveOrZero(message = "Sort order cannot be negative")
+    private Integer sortOrder;
 
     private List<ActivityPatchRequest> activities;
 }

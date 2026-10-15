@@ -1,9 +1,10 @@
 package com.myTripProject.PlanYourTrip.dto;
+
+import com.myTripProject.PlanYourTrip.dto.ActivityPatchRequest;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDate;
 import java.util.List;
 
 @Getter
@@ -11,11 +12,13 @@ import java.util.List;
 @NoArgsConstructor
 public class DestinationPatchRequest2 {
 
+    private String country;
+
     private String city;
 
-    private LocalDate startDate;
+    private Integer days;
 
-    private LocalDate endDate;
+    private Integer sortOrder;
 
     private List<ActivityPatchRequest> activities;
 }

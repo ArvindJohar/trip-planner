@@ -16,6 +16,7 @@ import java.time.LocalTime;
 public class ActivityResponse {
     private Long id;
     private String title;
+    private Integer sortOrder;
     private LocalDate date;
     private ActivityCategory category;
     private BigDecimal cost;

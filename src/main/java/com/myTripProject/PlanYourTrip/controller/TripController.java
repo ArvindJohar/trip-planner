@@ -3,9 +3,14 @@ package com.myTripProject.PlanYourTrip.controller;
 import com.myTripProject.PlanYourTrip.dto.*;
 import com.myTripProject.PlanYourTrip.service.TripService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -20,40 +25,41 @@ public class TripController {
     }
 
     @PostMapping
-    public TripResponse createTrip(@Valid @RequestBody TripRequest request) {
-        return tripService.createTrip(request);
+    public ResponseEntity<TripResponse> createTrip(@Valid @RequestBody TripRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(tripService.createTrip(request));
     }
 
     @GetMapping
-    public Page<TripResponse> getTrips(
-            @RequestParam(required = false) String title,
+    public ResponseEntity<Page<TripResponse>> getTrips(
+            @RequestParam(required = false) @NotBlank(message = "Title field is empty.") String title,
             @RequestParam(required = false) LocalDate fromDate,
             @RequestParam(required = false) LocalDate toDate,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "0") @PositiveOrZero(message = "Page number cannot be negative.") int page,
+            @RequestParam(defaultValue = "10") @Positive(message = "Page size must be positive.") int size) {
 
         Pageable pageable = PageRequest.of(page, size);
 
-        return tripService.getTrips(title, fromDate, toDate, pageable);
+        return ResponseEntity.ok(tripService.getTrips(title, fromDate, toDate, pageable));
     }
 
     @GetMapping("/{id}")
-    public TripResponse getTripById(@PathVariable Long id) {
-        return tripService.getTripById(id);
+    public ResponseEntity<TripResponse> getTripById(@PathVariable @Positive(message = "Trip id must be positive.") Long id) {
+        return ResponseEntity.ok(tripService.getTripById(id));
     }
 
     @DeleteMapping("/{id}")
-    public void deleteTripById(@PathVariable Long id) {
+    public ResponseEntity<Void> deleteTripById(@PathVariable @Positive(message = "Trip id must be positive.")Long id) {
         tripService.deleteTripById(id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/budget-summary")
-    public BudgetSummaryResponse getBudgetSummary(@PathVariable Long id) {
-        return tripService.getBudgetSummary(id);
+    public ResponseEntity<BudgetSummaryResponse> getBudgetSummary(@PathVariable @Positive(message = "Trip id must be positive.")Long id) {
+        return ResponseEntity.ok(tripService.getBudgetSummary(id));
     }
 
     @PatchMapping("/{id}")
-    public TripResponse updateTripById(@PathVariable Long id, @RequestBody TripPatchRequest tripPatchRequest) {
-        return tripService.updateTripById(id, tripPatchRequest);
+    public ResponseEntity<TripResponse> updateTripById(@PathVariable @Positive(message = "Trip id must be positive.") Long id, @RequestBody TripPatchRequest tripPatchRequest) {
+        return ResponseEntity.ok(tripService.updateTripById(id, tripPatchRequest));
     }
 }

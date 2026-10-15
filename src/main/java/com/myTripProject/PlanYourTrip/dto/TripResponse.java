@@ -23,5 +23,7 @@ public class TripResponse {
     private BigDecimal totalBudget;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private Integer destinationCount;
+    private BigDecimal spent;
     private List<DestinationResponse> destinations;
 }

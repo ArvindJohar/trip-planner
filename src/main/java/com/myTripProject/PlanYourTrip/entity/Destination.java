@@ -26,6 +26,9 @@ public class Destination {
     private Trip trip;
 
     @Column(nullable = false)
+    private String country;
+
+    @Column(nullable = false)
     private String city;
 
     @Column(nullable = false)
@@ -41,4 +44,10 @@ public class Destination {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @Column(name = "sort_order", nullable = false)
+    private Integer sortOrder;
+
+    @Column(nullable = false)
+    private Integer days;
 }

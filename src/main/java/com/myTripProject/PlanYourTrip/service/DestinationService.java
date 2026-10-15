@@ -13,6 +13,7 @@ import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 @Slf4j
@@ -28,7 +29,7 @@ public class DestinationService {
         this.activityRepository = activityRepository;
         this.activityServiceBean = activityServiceBean;
     }
-    //abc
+
     @Transactional
     public DestinationResponse createDestination(
             Long tripId,
@@ -41,36 +42,54 @@ public class DestinationService {
                         "Trip not found"
                 ));
 
-        if(request.getStartDate().isAfter(request.getEndDate())) {
-            throw new BadRequestException("Start date cannot be after End date");
+        if (trip.getStartDate() == null || trip.getEndDate() == null) {
+            throw new BadRequestException(
+                    "Trip start date and end date are required"
+            );
         }
 
-        if(request.getStartDate().isBefore(trip.getStartDate()) || request.getEndDate().isAfter(trip.getEndDate())) {
-            throw new BadRequestException("Destination dates must lie within Trip dates");
+        if (trip.getEndDate().isBefore(trip.getStartDate())) {
+            throw new BadRequestException(
+                    "Trip end date cannot be before start date"
+            );
         }
+
+        List<Destination> existingDestinations =
+                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(tripId);
 
         Destination destination = new Destination();
-
         destination.setTrip(trip);
+        destination.setCountry(request.getCountry());
         destination.setCity(request.getCity());
-        destination.setStartDate(request.getStartDate());
-        destination.setEndDate(request.getEndDate());
 
-        Destination updatedDestination = destinationRepository.save(destination);
+        // Temporary valid values; the helper assigns the final allocation.
+        destination.setDays(1);
+        destination.setSortOrder(existingDestinations.size() + 1);
+        destination.setStartDate(trip.getStartDate());
+        destination.setEndDate(trip.getStartDate());
 
-        if (request.getActivities() != null) {
-            for (ActivityRequest activityRequest : request.getActivities()) {
-                activityServiceBean.createActivity(updatedDestination.getId(), activityRequest);
-            }
-        }
+        destinationRepository.save(destination);
 
-        DestinationResponse response = createDestinationResponse(updatedDestination);
-        log.info("Destination successfully created with id: {}", updatedDestination.getId());
-        return response;
+        rebalanceDestinations(tripId);
+
+        touchTrip(tripId);
+
+        Destination savedDestination = destinationRepository.findById(
+                destination.getId()
+        ).orElseThrow(() -> new ResourceNotFoundException(
+                "Destination not found after creation"
+        ));
+
+        log.info(
+                "Destination successfully created with id: {}",
+                savedDestination.getId()
+        );
+
+        return createDestinationResponse(savedDestination);
     }
     public List<DestinationResponse> getDestinations(Long tripId) {
         log.info("Retrieving all destinations inside Trip {}", tripId);
-        List<Destination> destinations = destinationRepository.findByTripId(tripId);
+        List<Destination> destinations = destinationRepository.findByTripIdOrderByStartDateAscIdAsc(tripId);
         List<DestinationResponse> destinationResponses = new ArrayList<>();
         for(Destination destination : destinations) {
             destinationResponses.add(createDestinationResponse(destination));
@@ -80,20 +99,38 @@ public class DestinationService {
     }
 
     public DestinationResponse createDestinationResponse(Destination destination) {
+
         DestinationResponse destinationResponse = new DestinationResponse();
+
         destinationResponse.setId(destination.getId());
+        destinationResponse.setCountry(destination.getCountry());
         destinationResponse.setCity(destination.getCity());
+
+        destinationResponse.setSortOrder(destination.getSortOrder());
+        destinationResponse.setDays(destination.getDays());
+
         destinationResponse.setStartDate(destination.getStartDate());
         destinationResponse.setEndDate(destination.getEndDate());
+
         destinationResponse.setCreatedAt(destination.getCreatedAt());
         destinationResponse.setUpdatedAt(destination.getUpdatedAt());
-        List<Activity> activities = activityRepository.findByDestinationId(destination.getId());
+
+        List<Activity> activities =
+                activityRepository.findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(
+                        destination.getId()
+                );
+
         List<ActivityResponse> activityResponses = new ArrayList<>();
-        for(Activity activity : activities) {
-            ActivityResponse activityResponse = activityServiceBean.createActivityResponse(activity);
+
+        for (Activity activity : activities) {
+            ActivityResponse activityResponse =
+                    activityServiceBean.createActivityResponse(activity);
+
             activityResponses.add(activityResponse);
         }
+
         destinationResponse.setActivities(activityResponses);
+
         return destinationResponse;
     }
 
@@ -104,104 +141,317 @@ public class DestinationService {
         log.info("Destination {} successfully retrieved.", destinationId);
         return destinationResponse;
     }
+
+    @Transactional
     public void deleteDestinationById(Long destinationId) {
+
         log.info("Removing destination {}", destinationId);
-        Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("No such destination exists"));
+
+        Destination destination = destinationRepository.findById(destinationId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No such destination exists"
+                ));
+
+        Long tripId = destination.getTrip().getId();
+
         destinationRepository.delete(destination);
+
+        rebalanceDestinations(tripId);
+
+        touchTrip(tripId);
+
         log.info("Destination {} successfully removed.", destinationId);
     }
+
+    private void rebalanceDestinations(Long tripId) {
+
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Trip not found"
+                ));
+
+        List<Destination> destinations =
+                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(tripId);
+
+        // Nothing to redistribute if no destinations remain.
+        if (destinations.isEmpty()) {
+            return;
+        }
+
+        long totalTripDays =
+                java.time.temporal.ChronoUnit.DAYS.between(
+                        trip.getStartDate(),
+                        trip.getEndDate()
+                ) + 1;
+
+        int destinationCount = destinations.size();
+
+        int baseDays = (int) (totalTripDays / destinationCount);
+        int extraDays = (int) (totalTripDays % destinationCount);
+
+        java.time.LocalDate currentStartDate = trip.getStartDate();
+
+        for (int i = 0; i < destinationCount; i++) {
+
+            Destination current = destinations.get(i);
+
+            int allocatedDays = baseDays;
+
+            // Distribute any remaining days among the first destinations.
+            if (i < extraDays) {
+                allocatedDays++;
+            }
+
+            java.time.LocalDate currentEndDate =
+                    currentStartDate.plusDays(allocatedDays - 1L);
+
+            current.setSortOrder(i + 1);
+            current.setDays(allocatedDays);
+            current.setStartDate(currentStartDate);
+            current.setEndDate(currentEndDate);
+
+            currentStartDate = currentEndDate.plusDays(1);
+        }
+
+        destinationRepository.saveAll(destinations);
+    }
+
     @Transactional
     public DestinationResponse updateDestinationById(
             Long destinationId, DestinationPatchRequest2 request) {
 
         log.info("Updating destination: {}", destinationId);
+
         Destination destination = destinationRepository.findById(destinationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Destination " + destinationId + " not exists"));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Destination " + destinationId + " not exists"
+                ));
 
+        // 1. Apply destination updates
+        if (request.getCountry() != null) {
+            destination.setCountry(request.getCountry().trim());
+        }
 
-        // 1. Apply Destination updates
         if (request.getCity() != null) {
             destination.setCity(request.getCity().trim());
         }
 
-        if (request.getStartDate() != null) {
-            destination.setStartDate(request.getStartDate());
-        }
-
-        if (request.getEndDate() != null) {
-            destination.setEndDate(request.getEndDate());
-        }
-
-        // 2. Apply Activity updates
-        if (request.getActivities() != null) {
-
-            for (ActivityPatchRequest activityPatchRequest : request.getActivities()) {
-
-                if (activityPatchRequest.getActivityId() == null) {
-                    throw new BadRequestException(
-                            "Id not provided for an activity");
-                }
-
-                Activity activity = activityRepository
-                        .findById(activityPatchRequest.getActivityId())
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException("Activity not exists"));
-
-                if (!activity.getDestination().getId().equals(destinationId)) {
-                    throw new BadRequestException(
-                            "Activity does not belong to this destination");
-                }
-
-                ActivityPatchRequest2 activityPatchRequest2 = new ActivityPatchRequest2();
-                activityPatchRequest2.setCategory(activityPatchRequest.getCategory());
-                activityPatchRequest2.setCost(activityPatchRequest.getCost());
-                activityPatchRequest2.setTitle(activityPatchRequest.getTitle());
-                activityPatchRequest2.setDate(activityPatchRequest.getDate());
-                activityPatchRequest2.setStartTime(activityPatchRequest.getStartTime());
-                activityPatchRequest2.setEndTime(activityPatchRequest.getEndTime());
-
-                activityServiceBean.updateActivityById(activityPatchRequest.getActivityId(), activityPatchRequest2);
+        if (request.getDays() != null) {
+            if (request.getDays() <= 0) {
+                throw new BadRequestException(
+                        "Destination days must be positive"
+                );
             }
+            destination.setDays(request.getDays());
         }
 
-        // 3. Validate Destination's own fields
-        if (destination.getCity().isBlank()) {
+        if (request.getSortOrder() != null) {
+            if (request.getSortOrder() <= 0) {
+                throw new BadRequestException(
+                        "Destination order must be positive"
+                );
+            }
+
+            reorderDestination(destination, request.getSortOrder());
+        }
+
+        if (destination.getCountry() == null
+                || destination.getCountry().isBlank()) {
+            throw new BadRequestException("Country must not be blank");
+        }
+
+        if (destination.getCity() == null
+                || destination.getCity().isBlank()) {
             throw new BadRequestException("City must not be blank");
         }
 
-        if (destination.getStartDate().isAfter(destination.getEndDate())) {
-            throw new BadRequestException(
-                    "Start date cannot be after end date");
-        }
+        // 2. Apply activity updates
+        if (request.getActivities() != null) {
+            for (ActivityPatchRequest activityRequest : request.getActivities()) {
 
-        // 4. Validate Destination dates against its Trip
-        Trip trip = destination.getTrip();
+                if (activityRequest.getActivityId() == null) {
+                    throw new BadRequestException(
+                            "Id not provided for an activity"
+                    );
+                }
 
-        if (destination.getStartDate().isBefore(trip.getStartDate())
-                || destination.getEndDate().isAfter(trip.getEndDate())) {
-            throw new BadRequestException(
-                    "Destination dates must lie within trip dates");
-        }
+                Activity activity = activityRepository
+                        .findById(activityRequest.getActivityId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Activity not exists"
+                        ));
 
-        // 5. Validate every Activity, including those not in the request
-        List<Activity> allActivities =
-                activityRepository.findByDestinationId(destinationId);
+                if (!activity.getDestination().getId().equals(destinationId)) {
+                    throw new BadRequestException(
+                            "Activity does not belong to this destination"
+                    );
+                }
 
-        for (Activity activity : allActivities) {
+                ActivityPatchRequest2 activityRequest2 =
+                        new ActivityPatchRequest2();
 
-            if (activity.getDate().isBefore(destination.getStartDate())
-                    || activity.getDate().isAfter(destination.getEndDate())) {
-                throw new BadRequestException(
-                        "Activity date must lie within destination dates");
+                activityRequest2.setCategory(activityRequest.getCategory());
+                activityRequest2.setCost(activityRequest.getCost());
+                activityRequest2.setTitle(activityRequest.getTitle());
+                activityRequest2.setDate(activityRequest.getDate());
+                activityRequest2.setStartTime(activityRequest.getStartTime());
+                activityRequest2.setEndTime(activityRequest.getEndTime());
+
+                activityServiceBean.updateActivityById(
+                        activityRequest.getActivityId(),
+                        activityRequest2
+                );
             }
         }
 
-        // 6. Save Destination and return response
+        Trip trip = destination.getTrip();
+
+        // 3. Recalculate destination dates from their order and allocated days
+        recalculateDestinationDates(trip.getId());
+
+        // 4. Validate activities against the recalculated destination dates
+        List<Destination> destinations =
+                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(
+                        trip.getId()
+                );
+
+        for (Destination current : destinations) {
+            List<Activity> activities =
+                    activityRepository
+                            .findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(
+                                    current.getId()
+                            );
+
+            for (Activity activity : activities) {
+                if (activity.getDate().isBefore(current.getStartDate())
+                        || activity.getDate().isAfter(current.getEndDate())) {
+                    throw new BadRequestException(
+                            "Activity date must lie within destination dates"
+                    );
+                }
+            }
+        }
+
+        // 5. Save and return the updated destination
         Destination updatedDestination =
                 destinationRepository.saveAndFlush(destination);
 
-        DestinationResponse destinationResponse = createDestinationResponse(updatedDestination);
+        touchTrip(trip.getId());
+
         log.info("Destination {} updated successfully.", destinationId);
-        return destinationResponse;
+
+        return createDestinationResponse(updatedDestination);
+    }
+
+    private void reorderDestination(
+            Destination destination,
+            Integer requestedOrder
+    ) {
+        Trip trip = destination.getTrip();
+
+        List<Destination> destinations =
+                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(
+                        trip.getId()
+                );
+
+        destinations.sort(
+                Comparator.comparing(Destination::getSortOrder)
+                        .thenComparing(Destination::getId)
+        );
+
+        int oldIndex = destinations.indexOf(destination);
+
+        if (oldIndex == -1) {
+            throw new ResourceNotFoundException("Destination not found");
+        }
+
+        int newIndex = Math.min(requestedOrder - 1, destinations.size() - 1);
+
+        if (oldIndex == newIndex) {
+            return;
+        }
+
+        destinations.remove(oldIndex);
+        destinations.add(newIndex, destination);
+
+        for (int i = 0; i < destinations.size(); i++) {
+            destinations.get(i).setSortOrder(i + 1);
+        }
+
+        destinationRepository.saveAll(destinations);
+    }
+
+    private void recalculateDestinationDates(Long tripId) {
+
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Trip not found"
+                ));
+
+        List<Destination> destinations =
+                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(
+                        tripId
+                );
+
+        destinations.sort(
+                java.util.Comparator.comparing(Destination::getSortOrder)
+                        .thenComparing(Destination::getId)
+        );
+
+        long totalTripDays =
+                java.time.temporal.ChronoUnit.DAYS.between(
+                        trip.getStartDate(),
+                        trip.getEndDate()
+                ) + 1;
+
+        long allocatedDays = destinations.stream()
+                .mapToLong(Destination::getDays)
+                .sum();
+
+        if (allocatedDays > totalTripDays) {
+            throw new BadRequestException(
+                    "Destination days cannot exceed the total trip duration of "
+                            + totalTripDays + " days"
+            );
+        }
+
+        java.time.LocalDate currentStartDate = trip.getStartDate();
+
+        for (int i = 0; i < destinations.size(); i++) {
+            Destination current = destinations.get(i);
+
+            if (current.getDays() == null || current.getDays() <= 0) {
+                throw new BadRequestException(
+                        "Destination days must be positive"
+                );
+            }
+
+            // Ensure destination order remains sequential.
+            current.setSortOrder(i + 1);
+            current.setStartDate(currentStartDate);
+
+            java.time.LocalDate currentEndDate =
+                    currentStartDate.plusDays(current.getDays() - 1L);
+
+            current.setEndDate(currentEndDate);
+
+            currentStartDate = currentEndDate.plusDays(1);
+
+        }
+
+        destinationRepository.saveAll(destinations);
+    }
+
+    @Transactional
+    public void refreshDestinationDates(Long tripId) {
+        recalculateDestinationDates(tripId);
+    }
+
+    private void touchTrip(Long tripId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new ResourceNotFoundException("Trip not found"));
+
+        trip.setUpdatedAt(java.time.LocalDateTime.now());
+        tripRepository.saveAndFlush(trip);
     }
 }

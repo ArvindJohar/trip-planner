@@ -11,10 +11,13 @@ import java.util.List;
 @NoArgsConstructor
 public class DestinationResponse {
     private Long id;
+    private String country;
     private String city;
     private LocalDate startDate;
     private LocalDate endDate;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private Integer sortOrder;
+    private Integer days;
     private List<ActivityResponse> activities;
 }
