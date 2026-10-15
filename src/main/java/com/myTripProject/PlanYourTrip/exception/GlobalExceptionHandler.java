@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
@@ -134,6 +135,20 @@ public class GlobalExceptionHandler {
 
         return buildErrorResponse(
                 HttpStatus.BAD_REQUEST, message, request);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(
+            NoResourceFoundException ex,
+            HttpServletRequest request) {
+
+        log.warn("Resource not found: {}", request.getRequestURI());
+
+        return buildErrorResponse(
+                HttpStatus.NOT_FOUND,
+                "Requested resource was not found",
+                request
+        );
     }
 
     // Catch-all: only unexpected errors should reach this handler.
