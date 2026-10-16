@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -138,9 +139,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNoResourceFound(
-            NoResourceFoundException ex,
-            HttpServletRequest request) {
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(HttpServletRequest request) {
 
         log.warn("Resource not found: {}", request.getRequestURI());
 
@@ -165,6 +164,20 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
+
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<ErrorResponse> handleBadCredentials(HttpServletRequest request) {
+        log.warn(
+                "Authentication failed. Path: {}",
+                request.getRequestURI()
+        );
+
+        return buildErrorResponse(
+                HttpStatus.UNAUTHORIZED,
+                "Invalid email or password",
+                request
+        );
     }
 
     // Catch-all: only unexpected errors should reach this handler.
