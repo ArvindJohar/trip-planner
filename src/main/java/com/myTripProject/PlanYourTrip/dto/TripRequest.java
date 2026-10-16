@@ -18,9 +18,6 @@ public class TripRequest {
     @NotBlank
     private String title;
 
-    @NotBlank
-    private String country;
-
     @NotNull
     private LocalDate startDate;
 

@@ -25,8 +25,6 @@ public class Trip {
     @Column(nullable = false)
     private String title;
 
-    private String country;
-
     @Column(nullable = false)
     private LocalDate startDate;
 

@@ -18,8 +18,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -50,7 +51,6 @@ public class TripService {
         Trip trip = new Trip();
 
         trip.setTitle(request.getTitle());
-        trip.setCountry(request.getCountry());
         trip.setStartDate(request.getStartDate());
         trip.setEndDate(request.getEndDate());
         trip.setTravellers(request.getTravellers());
@@ -153,7 +153,6 @@ public class TripService {
 
         response.setId(trip.getId());
         response.setTitle(trip.getTitle());
-        response.setCountry(trip.getCountry());
         response.setStartDate(trip.getStartDate());
         response.setEndDate(trip.getEndDate());
         response.setTravellers(trip.getTravellers());
@@ -163,7 +162,7 @@ public class TripService {
         response.setUpdatedAt(trip.getUpdatedAt());
 
         List<Destination> destinations =
-                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(
+                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(
                         trip.getId());
 
         // Add trip summary fields
@@ -206,175 +205,277 @@ public class TripService {
         log.info("Trip: {} successfully deleted", id);
     }
 
-    @Transactional
-    public TripResponse updateTripById(Long id, TripPatchRequest tripPatchRequest) {
-
-        log.info("Updating trip: {}...", id);
+    @Transactional(rollbackOn = Exception.class)
+    public TripResponse replaceTrip(Long id, TripUpdateRequest request) {
 
         Trip trip = tripRepository.findById(id)
                 .orElseThrow(() ->
-                        new ResourceNotFoundException("Trip not exists"));
+                        new ResourceNotFoundException("Trip not found"));
 
-        // 1. Apply Trip updates
-        if (tripPatchRequest.getCountry() != null) {
-            trip.setCountry(tripPatchRequest.getCountry());
+        // 1. Validate and update trip fields.
+        if (request.getTitle() == null
+                || request.getTitle().isBlank()) {
+            throw new BadRequestException("Title cannot be blank.");
         }
 
-        if (tripPatchRequest.getCurrency() != null) {
-            trip.setCurrency(
-                    tripPatchRequest.getCurrency().trim().toUpperCase());
+        if (request.getCountry() == null
+                || request.getCountry().isBlank()) {
+            throw new BadRequestException("Country cannot be blank.");
         }
 
-        if (tripPatchRequest.getTitle() != null) {
-            trip.setTitle(tripPatchRequest.getTitle().trim());
+        if (request.getCurrency() == null
+                || !request.getCurrency().trim()
+                .toUpperCase().matches("[A-Z]{3}")) {
+            throw new BadRequestException("Invalid currency.");
         }
 
-        if (tripPatchRequest.getStartDate() != null) {
-            trip.setStartDate(tripPatchRequest.getStartDate());
+        if (request.getStartDate() == null
+                || request.getEndDate() == null
+                || request.getEndDate().isBefore(request.getStartDate())) {
+            throw new BadRequestException("Invalid trip dates.");
         }
 
-        if (tripPatchRequest.getEndDate() != null) {
-            trip.setEndDate(tripPatchRequest.getEndDate());
+        if (request.getTravellers() == null
+                || request.getTravellers() < 1) {
+            throw new BadRequestException(
+                    "At least 1 traveller is required.");
         }
 
-        if (tripPatchRequest.getTotalBudget() != null) {
-            trip.setTotalBudget(tripPatchRequest.getTotalBudget());
+        if (request.getTotalBudget() == null
+                || request.getTotalBudget()
+                .compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            throw new BadRequestException(
+                    "Budget must be positive.");
         }
 
-        if (tripPatchRequest.getTravellers() != null) {
-            trip.setTravellers(tripPatchRequest.getTravellers());
+        if (request.getDestinations() == null) {
+            throw new BadRequestException(
+                    "Destinations list is required.");
         }
 
-        // 2. Apply Destination and Activity updates
-        if (tripPatchRequest.getDestinations() != null) {
+        trip.setTitle(request.getTitle().trim());
+        trip.setCurrency(request.getCurrency().trim().toUpperCase());
+        trip.setStartDate(request.getStartDate());
+        trip.setEndDate(request.getEndDate());
+        trip.setTravellers(request.getTravellers());
+        trip.setTotalBudget(request.getTotalBudget());
 
-            for (DestinationPatchRequest destinationPatchRequest
-                    : tripPatchRequest.getDestinations()) {
+        // 2. Load existing destinations.
+        List<Destination> existingDestinations =
+                destinationRepository
+                        .findByTripIdOrderBySortOrderAscIdAsc(id);
 
-                if (destinationPatchRequest.getDestinationId() == null) {
+        Map<Long, Destination> destinationById =
+                existingDestinations.stream()
+                        .collect(Collectors.toMap(
+                                Destination::getId,
+                                d -> d));
 
-                    // Create a new destination
-                    if (destinationPatchRequest.getCountry() == null
-                            || destinationPatchRequest.getCountry().isBlank()) {
-                        throw new BadRequestException(
-                                "Country is required for a destination"
-                        );
-                    }
+        Set<Long> requestedDestinationIds =
+                new HashSet<>();
 
-                    if (destinationPatchRequest.getCity() == null
-                            || destinationPatchRequest.getCity().isBlank()) {
-                        throw new BadRequestException(
-                                "City is required for a destination"
-                        );
-                    }
+        // Validate destination IDs before changing associations.
+        for (DestinationUpdateRequest d : request.getDestinations()) {
+            if (d.getId() != null) {
+                if (!requestedDestinationIds.add(d.getId())) {
+                    throw new BadRequestException(
+                            "Duplicate destination ID: " + d.getId());
+                }
 
-                    DestinationRequest destinationRequest =
-                            new DestinationRequest();
-
-                    destinationRequest.setCountry(
-                            destinationPatchRequest.getCountry()
-                    );
-                    destinationRequest.setCity(
-                            destinationPatchRequest.getCity()
-                    );
-
-                    // Initial days are rebalanced by createDestination().
-                    destinationRequest.setDays(
-                            destinationPatchRequest.getDays() != null
-                                    ? destinationPatchRequest.getDays()
-                                    : 1
-                    );
-
-                    destinationServiceBean.createDestination(
-                            id,
-                            destinationRequest
-                    );
-
-                } else {
-
-                    // Update an existing destination
-                    Destination destination = destinationRepository
-                            .findById(destinationPatchRequest.getDestinationId())
-                            .orElseThrow(() -> new ResourceNotFoundException(
-                                    "Destination not exists"
-                            ));
-
-                    if (!destination.getTrip().getId().equals(id)) {
-                        throw new BadRequestException(
-                                "Destination does not belong to this trip"
-                        );
-                    }
-
-                    DestinationPatchRequest2 destinationPatchRequest2 =
-                            new DestinationPatchRequest2();
-
-                    destinationPatchRequest2.setCountry(
-                            destinationPatchRequest.getCountry()
-                    );
-                    destinationPatchRequest2.setCity(
-                            destinationPatchRequest.getCity()
-                    );
-                    destinationPatchRequest2.setDays(
-                            destinationPatchRequest.getDays()
-                    );
-                    destinationPatchRequest2.setSortOrder(
-                            destinationPatchRequest.getSortOrder()
-                    );
-                    destinationPatchRequest2.setActivities(
-                            destinationPatchRequest.getActivities()
-                    );
-
-                    destinationServiceBean.updateDestinationById(
-                            destinationPatchRequest.getDestinationId(),
-                            destinationPatchRequest2
-                    );
+                if (!destinationById.containsKey(d.getId())) {
+                    throw new BadRequestException(
+                            "Destination does not belong to this trip: "
+                                    + d.getId());
                 }
             }
-        }
 
-        // 3. Validate Trip's own fields
-        if (trip.getTitle().isBlank()) {
-            throw new BadRequestException("Title field cannot be empty");
-        }
-
-
-        if (!trip.getCurrency().matches("[A-Z]{3}")) {
-            throw new BadRequestException("Invalid currency");
-        }
-
-        if (trip.getEndDate().isBefore(trip.getStartDate())) {
-            throw new BadRequestException("Invalid dates");
-        }
-
-        if (trip.getTotalBudget().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BadRequestException("Budget must be positive.");
-        }
-
-        if (trip.getTravellers() < 1) {
-            throw new BadRequestException(
-                    "At least 1 traveller required.");
-        }
-
-        destinationServiceBean.refreshDestinationDates(id);
-
-        // 4. Validate every Destination and Activity
-        List<Destination> allDestinations =
-                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(id);
-
-        for (Destination destination : allDestinations) {
-            if (destination.getStartDate().isBefore(trip.getStartDate())
-                    || destination.getEndDate().isAfter(trip.getEndDate())) {
+            if (d.getCountry() == null || d.getCountry().isBlank()
+                    || d.getCity() == null || d.getCity().isBlank()) {
                 throw new BadRequestException(
-                        "Destination dates outside the trip dates");
+                        "Destination country and city are required.");
+            }
+
+            if (d.getDays() == null || d.getDays() <= 0) {
+                throw new BadRequestException(
+                        "Destination days must be positive.");
+            }
+
+            if (d.getActivities() == null) {
+                throw new BadRequestException(
+                        "Activities list is required for each destination.");
             }
         }
 
-        // 5. Save Trip and return response
-        Trip updatedTrip = tripRepository.saveAndFlush(trip);
+        // 3. Delete omitted destinations and their activities.
+        for (Destination existing : existingDestinations) {
+            if (!requestedDestinationIds.contains(existing.getId())) {
+                activityRepository.deleteAll(
+                        activityRepository
+                                .findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(
+                                        existing.getId()));
 
-        TripResponse tripResponse = createTripResponse(updatedTrip);
-        log.info("Trip {} successfully updated.", id);
-        return tripResponse;
+                destinationRepository.delete(existing);
+            }
+        }
+
+        destinationRepository.flush();
+
+        // 4. Update or create destinations in request order.
+        List<Destination> orderedDestinations = new ArrayList<>();
+
+        for (int i = 0; i < request.getDestinations().size(); i++) {
+            DestinationUpdateRequest d = request.getDestinations().get(i);
+
+            Destination destination;
+
+            if (d.getId() != null) {
+                destination = destinationById.get(d.getId());
+            } else {
+                destination = new Destination();
+                destination.setTrip(trip);
+            }
+
+            destination.setCountry(d.getCountry().trim());
+            destination.setCity(d.getCity().trim());
+            destination.setDays(d.getDays());
+            destination.setSortOrder(i + 1);
+
+            // Temporary dates. Final dates are calculated below.
+            destination.setStartDate(trip.getStartDate());
+            destination.setEndDate(trip.getStartDate());
+
+            orderedDestinations.add(
+                    destinationRepository.save(destination));
+        }
+
+        // 5. Requested destination days must equal the trip duration.
+        long tripDays = ChronoUnit.DAYS.between(
+                trip.getStartDate(), trip.getEndDate()) + 1;
+
+        long allocatedDays = orderedDestinations.stream()
+                .mapToLong(Destination::getDays)
+                .sum();
+
+        if (allocatedDays != tripDays) {
+            throw new BadRequestException(
+                    "Destination days must total " + tripDays
+                            + " days, but total " + allocatedDays + ".");
+        }
+
+        // 6. Calculate final destination dates.
+        LocalDate currentStart = trip.getStartDate();
+
+        for (Destination destination : orderedDestinations) {
+            destination.setStartDate(currentStart);
+
+            LocalDate currentEnd =
+                    currentStart.plusDays(destination.getDays() - 1L);
+
+            destination.setEndDate(currentEnd);
+            currentStart = currentEnd.plusDays(1);
+        }
+
+        destinationRepository.saveAllAndFlush(orderedDestinations);
+
+        // 7. Reconcile activities against the final destination dates.
+        for (int i = 0; i < orderedDestinations.size(); i++) {
+            Destination destination = orderedDestinations.get(i);
+            DestinationUpdateRequest d = request.getDestinations().get(i);
+
+            List<Activity> existingActivities =
+                    activityRepository
+                            .findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(
+                                    destination.getId());
+
+            Map<Long, Activity> activityById =
+                    existingActivities.stream()
+                            .collect(Collectors.toMap(
+                                    Activity::getId,
+                                    a -> a));
+
+            Set<Long> requestedActivityIds =
+                    new HashSet<>();
+
+            // Validate activity IDs and required fields first.
+            for (ActivityUpdateRequest a : d.getActivities()) {
+                if (a.getId() != null) {
+                    if (!requestedActivityIds.add(a.getId())) {
+                        throw new BadRequestException(
+                                "Duplicate activity ID: " + a.getId());
+                    }
+
+                    if (!activityById.containsKey(a.getId())) {
+                        throw new BadRequestException(
+                                "Activity does not belong to this destination: "
+                                        + a.getId());
+                    }
+                }
+
+                if (a.getTitle() == null || a.getTitle().isBlank()
+                        || a.getDate() == null
+                        || a.getCategory() == null
+                        || a.getCost() == null
+                        || a.getStartTime() == null
+                        || a.getEndTime() == null) {
+                    throw new BadRequestException(
+                            "All activity fields are required.");
+                }
+            }
+
+            // Delete omitted activities.
+            for (Activity existing : existingActivities) {
+                if (!requestedActivityIds.contains(existing.getId())) {
+                    activityRepository.delete(existing);
+                }
+            }
+
+            // Update existing activities or create new ones.
+            for (int j = 0; j < d.getActivities().size(); j++) {
+                ActivityUpdateRequest a = d.getActivities().get(j);
+
+                Activity activity;
+
+                if (a.getId() != null) {
+                    activity = activityById.get(a.getId());
+                } else {
+                    activity = new Activity();
+                    activity.setDestination(destination);
+                }
+
+                activity.setTitle(a.getTitle().trim());
+                activity.setDate(a.getDate());
+                activity.setCategory(a.getCategory());
+                activity.setCost(a.getCost());
+                activity.setStartTime(a.getStartTime());
+                activity.setEndTime(a.getEndTime());
+                activity.setSortOrder(j + 1);
+
+                // Validate against final destination dates.
+                if (a.getDate().isBefore(destination.getStartDate())
+                        || a.getDate().isAfter(destination.getEndDate())) {
+                    throw new BadRequestException(
+                            "Activity date must fall within destination dates.");
+                }
+
+                if (!a.getEndTime().isAfter(a.getStartTime())) {
+                    throw new BadRequestException(
+                            "Activity end time must be after start time.");
+                }
+
+                if (a.getCost().compareTo(BigDecimal.ZERO) < 0) {
+                    throw new BadRequestException(
+                            "Activity cost cannot be negative.");
+                }
+
+                activityRepository.save(activity);
+            }
+        }
+
+        // 8. Persist the completed trip and return its full response.
+        tripRepository.saveAndFlush(trip);
+
+        return createTripResponse(trip);
     }
+
 
 }

@@ -15,7 +15,6 @@ import java.util.List;
 public class TripResponse {
     private Long id;
     private String title;
-    private String country;
     private LocalDate startDate;
     private LocalDate endDate;
     private int travellers;

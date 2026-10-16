@@ -55,7 +55,7 @@ public class DestinationService {
         }
 
         List<Destination> existingDestinations =
-                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(tripId);
+                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(tripId);
 
         Destination destination = new Destination();
         destination.setTrip(trip);
@@ -89,7 +89,7 @@ public class DestinationService {
     }
     public List<DestinationResponse> getDestinations(Long tripId) {
         log.info("Retrieving all destinations inside Trip {}", tripId);
-        List<Destination> destinations = destinationRepository.findByTripIdOrderByStartDateAscIdAsc(tripId);
+        List<Destination> destinations = destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(tripId);
         List<DestinationResponse> destinationResponses = new ArrayList<>();
         for(Destination destination : destinations) {
             destinationResponses.add(createDestinationResponse(destination));
@@ -171,7 +171,7 @@ public class DestinationService {
                 ));
 
         List<Destination> destinations =
-                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(tripId);
+                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(tripId);
 
         // Nothing to redistribute if no destinations remain.
         if (destinations.isEmpty()) {
@@ -311,7 +311,7 @@ public class DestinationService {
 
         // 4. Validate activities against the recalculated destination dates
         List<Destination> destinations =
-                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(
+                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(
                         trip.getId()
                 );
 
@@ -350,7 +350,7 @@ public class DestinationService {
         Trip trip = destination.getTrip();
 
         List<Destination> destinations =
-                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(
+                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(
                         trip.getId()
                 );
 
@@ -389,7 +389,7 @@ public class DestinationService {
                 ));
 
         List<Destination> destinations =
-                destinationRepository.findByTripIdOrderByStartDateAscIdAsc(
+                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(
                         tripId
                 );
 
@@ -440,11 +440,6 @@ public class DestinationService {
         }
 
         destinationRepository.saveAll(destinations);
-    }
-
-    @Transactional
-    public void refreshDestinationDates(Long tripId) {
-        recalculateDestinationDates(tripId);
     }
 
     private void touchTrip(Long tripId) {

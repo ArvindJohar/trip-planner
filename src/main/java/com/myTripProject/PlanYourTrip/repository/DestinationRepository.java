@@ -7,5 +7,5 @@ import java.util.List;
 
 public interface DestinationRepository extends JpaRepository<Destination, Long> {
 
-    List<Destination> findByTripIdOrderByStartDateAscIdAsc(Long tripId);
+    List<Destination> findByTripIdOrderBySortOrderAscIdAsc(Long tripId);
 }

@@ -3,7 +3,6 @@ package com.myTripProject.PlanYourTrip.controller;
 import com.myTripProject.PlanYourTrip.dto.*;
 import com.myTripProject.PlanYourTrip.service.TripService;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import org.springframework.data.domain.Page;
@@ -31,7 +30,7 @@ public class TripController {
 
     @GetMapping
     public ResponseEntity<Page<TripResponse>> getTrips(
-            @RequestParam(required = false) @NotBlank(message = "Title field is empty.") String title,
+            @RequestParam(required = false) String title,
             @RequestParam(required = false) LocalDate fromDate,
             @RequestParam(required = false) LocalDate toDate,
             @RequestParam(defaultValue = "0") @PositiveOrZero(message = "Page number cannot be negative.") int page,
@@ -58,8 +57,8 @@ public class TripController {
         return ResponseEntity.ok(tripService.getBudgetSummary(id));
     }
 
-    @PatchMapping("/{id}")
-    public ResponseEntity<TripResponse> updateTripById(@PathVariable @Positive(message = "Trip id must be positive.") Long id, @RequestBody TripPatchRequest tripPatchRequest) {
-        return ResponseEntity.ok(tripService.updateTripById(id, tripPatchRequest));
+    @PutMapping("/{id}")
+    public ResponseEntity<TripResponse> updateTripById(@PathVariable @Positive(message = "Trip id must be positive.") Long id, @RequestBody TripUpdateRequest request) {
+        return ResponseEntity.ok(tripService.replaceTrip(id, request));
     }
 }
