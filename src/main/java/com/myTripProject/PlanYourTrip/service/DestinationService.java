@@ -1,3 +1,4 @@
+
 package com.myTripProject.PlanYourTrip.service;
 
 import com.myTripProject.PlanYourTrip.dto.*;
@@ -12,6 +13,7 @@ import com.myTripProject.PlanYourTrip.repository.TripRepository;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -19,28 +21,36 @@ import java.util.List;
 @Slf4j
 @Service
 public class DestinationService {
+
     private final DestinationRepository destinationRepository;
     private final TripRepository tripRepository;
     private final ActivityRepository activityRepository;
     private final ActivityService activityServiceBean;
-    DestinationService(DestinationRepository destinationRepository, TripRepository tripRepository, ActivityRepository activityRepository, ActivityService activityServiceBean) {
+    private final CurrentUserService currentUserService;
+
+    public DestinationService(
+            DestinationRepository destinationRepository,
+            TripRepository tripRepository,
+            ActivityRepository activityRepository,
+            ActivityService activityServiceBean,
+            CurrentUserService currentUserService
+    ) {
         this.destinationRepository = destinationRepository;
         this.tripRepository = tripRepository;
         this.activityRepository = activityRepository;
         this.activityServiceBean = activityServiceBean;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional
     public DestinationResponse createDestination(
             Long tripId,
-            DestinationRequest request) {
+            DestinationRequest request
+    ) {
 
         log.info("Creating new destination in Trip {}...", tripId);
 
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Trip not found"
-                ));
+        Trip trip = currentUserService.getOwnedTripById(tripId);
 
         if (trip.getStartDate() == null || trip.getEndDate() == null) {
             throw new BadRequestException(
@@ -55,7 +65,9 @@ public class DestinationService {
         }
 
         List<Destination> existingDestinations =
-                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(tripId);
+                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(
+                        tripId
+                );
 
         Destination destination = new Destination();
         destination.setTrip(trip);
@@ -71,7 +83,6 @@ public class DestinationService {
         destinationRepository.save(destination);
 
         rebalanceDestinations(tripId);
-
         touchTrip(tripId);
 
         Destination savedDestination = destinationRepository.findById(
@@ -87,38 +98,54 @@ public class DestinationService {
 
         return createDestinationResponse(savedDestination);
     }
+
     public List<DestinationResponse> getDestinations(Long tripId) {
+
         log.info("Retrieving all destinations inside Trip {}", tripId);
-        List<Destination> destinations = destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(tripId);
-        List<DestinationResponse> destinationResponses = new ArrayList<>();
-        for(Destination destination : destinations) {
-            destinationResponses.add(createDestinationResponse(destination));
+
+        // Ensure the trip belongs to the authenticated user.
+        currentUserService.getOwnedTripById(tripId);
+
+        List<Destination> destinations =
+                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(
+                        tripId
+                );
+
+        List<DestinationResponse> destinationResponses =
+                new ArrayList<>();
+
+        for (Destination destination : destinations) {
+            destinationResponses.add(
+                    createDestinationResponse(destination)
+            );
         }
+
         log.info("All destinations of Trip: {} retrieved", tripId);
+
         return destinationResponses;
     }
 
-    public DestinationResponse createDestinationResponse(Destination destination) {
+    public DestinationResponse createDestinationResponse(
+            Destination destination
+    ) {
 
         DestinationResponse destinationResponse = new DestinationResponse();
 
         destinationResponse.setId(destination.getId());
         destinationResponse.setCountry(destination.getCountry());
         destinationResponse.setCity(destination.getCity());
-
         destinationResponse.setSortOrder(destination.getSortOrder());
         destinationResponse.setDays(destination.getDays());
-
         destinationResponse.setStartDate(destination.getStartDate());
         destinationResponse.setEndDate(destination.getEndDate());
-
         destinationResponse.setCreatedAt(destination.getCreatedAt());
         destinationResponse.setUpdatedAt(destination.getUpdatedAt());
 
         List<Activity> activities =
-                activityRepository.findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(
-                        destination.getId()
-                );
+                activityRepository
+                        .findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(
+                                destination.getId()
+                        );
 
         List<ActivityResponse> activityResponses = new ArrayList<>();
 
@@ -135,10 +162,17 @@ public class DestinationService {
     }
 
     public DestinationResponse getDestinationById(Long destinationId) {
+
         log.info("Retrieving destination {}...", destinationId);
-        Destination destination = destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("No destination with the requested id exists"));
-        DestinationResponse destinationResponse =  createDestinationResponse(destination);
+
+        Destination destination =
+                getOwnedDestinationById(destinationId);
+
+        DestinationResponse destinationResponse =
+                createDestinationResponse(destination);
+
         log.info("Destination {} successfully retrieved.", destinationId);
+
         return destinationResponse;
     }
 
@@ -147,17 +181,14 @@ public class DestinationService {
 
         log.info("Removing destination {}", destinationId);
 
-        Destination destination = destinationRepository.findById(destinationId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "No such destination exists"
-                ));
+        Destination destination =
+                getOwnedDestinationById(destinationId);
 
         Long tripId = destination.getTrip().getId();
 
         destinationRepository.delete(destination);
 
         rebalanceDestinations(tripId);
-
         touchTrip(tripId);
 
         log.info("Destination {} successfully removed.", destinationId);
@@ -171,7 +202,9 @@ public class DestinationService {
                 ));
 
         List<Destination> destinations =
-                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(tripId);
+                destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(
+                        tripId
+                );
 
         // Nothing to redistribute if no destinations remain.
         if (destinations.isEmpty()) {
@@ -218,14 +251,14 @@ public class DestinationService {
 
     @Transactional
     public DestinationResponse updateDestinationById(
-            Long destinationId, DestinationPatchRequest2 request) {
+            Long destinationId,
+            DestinationPatchRequest2 request
+    ) {
 
         log.info("Updating destination: {}", destinationId);
 
-        Destination destination = destinationRepository.findById(destinationId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Destination " + destinationId + " not exists"
-                ));
+        Destination destination =
+                getOwnedDestinationById(destinationId);
 
         // 1. Apply destination updates
         if (request.getCountry() != null) {
@@ -242,6 +275,7 @@ public class DestinationService {
                         "Destination days must be positive"
                 );
             }
+
             destination.setDays(request.getDays());
         }
 
@@ -267,7 +301,9 @@ public class DestinationService {
 
         // 2. Apply activity updates
         if (request.getActivities() != null) {
-            for (ActivityPatchRequest activityRequest : request.getActivities()) {
+
+            for (ActivityPatchRequest activityRequest :
+                    request.getActivities()) {
 
                 if (activityRequest.getActivityId() == null) {
                     throw new BadRequestException(
@@ -281,7 +317,8 @@ public class DestinationService {
                                 "Activity not exists"
                         ));
 
-                if (!activity.getDestination().getId().equals(destinationId)) {
+                if (!activity.getDestination().getId()
+                        .equals(destinationId)) {
                     throw new BadRequestException(
                             "Activity does not belong to this destination"
                     );
@@ -290,12 +327,18 @@ public class DestinationService {
                 ActivityPatchRequest2 activityRequest2 =
                         new ActivityPatchRequest2();
 
-                activityRequest2.setCategory(activityRequest.getCategory());
+                activityRequest2.setCategory(
+                        activityRequest.getCategory()
+                );
                 activityRequest2.setCost(activityRequest.getCost());
                 activityRequest2.setTitle(activityRequest.getTitle());
                 activityRequest2.setDate(activityRequest.getDate());
-                activityRequest2.setStartTime(activityRequest.getStartTime());
-                activityRequest2.setEndTime(activityRequest.getEndTime());
+                activityRequest2.setStartTime(
+                        activityRequest.getStartTime()
+                );
+                activityRequest2.setEndTime(
+                        activityRequest.getEndTime()
+                );
 
                 activityServiceBean.updateActivityById(
                         activityRequest.getActivityId(),
@@ -316,6 +359,7 @@ public class DestinationService {
                 );
 
         for (Destination current : destinations) {
+
             List<Activity> activities =
                     activityRepository
                             .findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(
@@ -347,6 +391,7 @@ public class DestinationService {
             Destination destination,
             Integer requestedOrder
     ) {
+
         Trip trip = destination.getTrip();
 
         List<Destination> destinations =
@@ -365,7 +410,10 @@ public class DestinationService {
             throw new ResourceNotFoundException("Destination not found");
         }
 
-        int newIndex = Math.min(requestedOrder - 1, destinations.size() - 1);
+        int newIndex = Math.min(
+                requestedOrder - 1,
+                destinations.size() - 1
+        );
 
         if (oldIndex == newIndex) {
             return;
@@ -394,7 +442,7 @@ public class DestinationService {
                 );
 
         destinations.sort(
-                java.util.Comparator.comparing(Destination::getSortOrder)
+                Comparator.comparing(Destination::getSortOrder)
                         .thenComparing(Destination::getId)
         );
 
@@ -418,6 +466,7 @@ public class DestinationService {
         java.time.LocalDate currentStartDate = trip.getStartDate();
 
         for (int i = 0; i < destinations.size(); i++) {
+
             Destination current = destinations.get(i);
 
             if (current.getDays() == null || current.getDays() <= 0) {
@@ -436,17 +485,35 @@ public class DestinationService {
             current.setEndDate(currentEndDate);
 
             currentStartDate = currentEndDate.plusDays(1);
-
         }
 
         destinationRepository.saveAll(destinations);
     }
 
     private void touchTrip(Long tripId) {
+
         Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new ResourceNotFoundException("Trip not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Trip not found"
+                ));
 
         trip.setUpdatedAt(java.time.LocalDateTime.now());
         tripRepository.saveAndFlush(trip);
+    }
+
+    private Destination getOwnedDestinationById(Long destinationId) {
+
+        Destination destination = destinationRepository
+                .findById(destinationId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Destination not found"
+                ));
+
+        // Verifies that the destination's parent trip belongs to this user.
+        currentUserService.getOwnedTripById(
+                destination.getTrip().getId()
+        );
+
+        return destination;
     }
 }

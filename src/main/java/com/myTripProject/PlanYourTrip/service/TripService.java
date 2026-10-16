@@ -1,12 +1,9 @@
+
 package com.myTripProject.PlanYourTrip.service;
 
 import com.myTripProject.PlanYourTrip.dto.*;
-import com.myTripProject.PlanYourTrip.entity.Activity;
-import com.myTripProject.PlanYourTrip.entity.ActivityCategory;
-import com.myTripProject.PlanYourTrip.entity.Destination;
-import com.myTripProject.PlanYourTrip.entity.Trip;
+import com.myTripProject.PlanYourTrip.entity.*;
 import com.myTripProject.PlanYourTrip.exception.BadRequestException;
-import com.myTripProject.PlanYourTrip.exception.ResourceNotFoundException;
 import com.myTripProject.PlanYourTrip.repository.ActivityRepository;
 import com.myTripProject.PlanYourTrip.repository.DestinationRepository;
 import com.myTripProject.PlanYourTrip.repository.TripRepository;
@@ -30,12 +27,20 @@ public class TripService {
     private final DestinationRepository destinationRepository;
     private final ActivityRepository activityRepository;
     private final DestinationService destinationServiceBean;
+    private final CurrentUserService currentUserService;
 
-    public TripService(TripRepository tripRepository, DestinationRepository destinationRepository, ActivityRepository activityRepository, DestinationService destinationServiceBean) {
+    public TripService(
+            TripRepository tripRepository,
+            DestinationRepository destinationRepository,
+            ActivityRepository activityRepository,
+            DestinationService destinationServiceBean,
+            CurrentUserService currentUserService
+    ) {
         this.tripRepository = tripRepository;
         this.destinationRepository = destinationRepository;
         this.activityRepository = activityRepository;
         this.destinationServiceBean = destinationServiceBean;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional
@@ -48,7 +53,9 @@ public class TripService {
                     "Trip start date must be before or equal to trip end date"
             );
         }
+
         Trip trip = new Trip();
+        trip.setUser(currentUserService.getCurrentUser());
 
         trip.setTitle(request.getTitle());
         trip.setStartDate(request.getStartDate());
@@ -56,37 +63,54 @@ public class TripService {
         trip.setTravellers(request.getTravellers());
         trip.setCurrency(request.getCurrency());
         trip.setTotalBudget(request.getTotalBudget());
+
         Trip updatedTrip = tripRepository.saveAndFlush(trip);
 
         if (request.getDestinations() != null) {
             for (DestinationRequest destinationRequest : request.getDestinations()) {
-                destinationServiceBean.createDestination(updatedTrip.getId(), destinationRequest);
+                destinationServiceBean.createDestination(
+                        updatedTrip.getId(),
+                        destinationRequest
+                );
             }
         }
+
         TripResponse tripResponse = createTripResponse(updatedTrip);
-        log.info("Successfully created the trip with id: {}", updatedTrip.getId());
+
+        log.info(
+                "Successfully created the trip with id: {}",
+                updatedTrip.getId()
+        );
+
         return tripResponse;
     }
 
     public BudgetSummaryResponse getBudgetSummary(Long tripId) {
 
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Trip not found"
-                ));
+        Trip trip = currentUserService.getOwnedTripById(tripId);
 
         List<Activity> activities =
-                activityRepository.findByDestinationTripIdOrderByDateAscStartTimeAscSortOrderAsc(tripId);
+                activityRepository
+                        .findByDestinationTripIdOrderByDateAscStartTimeAscSortOrderAsc(
+                                tripId
+                        );
 
         BigDecimal spent = BigDecimal.ZERO;
 
-        Map<ActivityCategory, BigDecimal> spendByCategory = new HashMap<>();
+        Map<ActivityCategory, BigDecimal> spendByCategory =
+                new HashMap<>();
 
         for (Activity activity : activities) {
             spent = spent.add(activity.getCost());
+
             ActivityCategory category = activity.getCategory();
+
             BigDecimal categoryAmount =
-                    spendByCategory.getOrDefault(category, BigDecimal.ZERO);
+                    spendByCategory.getOrDefault(
+                            category,
+                            BigDecimal.ZERO
+                    );
+
             spendByCategory.put(
                     category,
                     categoryAmount.add(activity.getCost())
@@ -110,40 +134,65 @@ public class TripService {
             String title,
             LocalDate fromDate,
             LocalDate toDate,
-            Pageable pageable) {
+            Pageable pageable
+    ) {
 
-        log.info("Retrieving all trips...");
+        User user = currentUserService.getCurrentUser();
+
+        Long userId = user.getId();
+
+        log.info("Retrieving trips for user: {}", userId);
+
         if ((fromDate == null) != (toDate == null)) {
             throw new BadRequestException(
-                    "Both fromDate and toDate must be provided together");
+                    "Both fromDate and toDate must be provided together"
+            );
         }
 
         if (fromDate != null && fromDate.isAfter(toDate)) {
             throw new BadRequestException(
-                    "From date cannot be after to date");
+                    "From date cannot be after to date"
+            );
         }
 
         Page<Trip> trips;
 
         if (title != null && !title.isBlank() && fromDate != null) {
             trips = tripRepository
-                    .findByTitleContainingIgnoreCaseAndStartDateBetween(
-                            title.trim(), fromDate, toDate, pageable);
+                    .findByUserIdAndTitleContainingIgnoreCaseAndStartDateBetween(
+                            userId,
+                            title.trim(),
+                            fromDate,
+                            toDate,
+                            pageable
+                    );
 
         } else if (title != null && !title.isBlank()) {
             trips = tripRepository
-                    .findByTitleContainingIgnoreCase(title.trim(), pageable);
+                    .findByUserIdAndTitleContainingIgnoreCase(
+                            userId,
+                            title.trim(),
+                            pageable
+                    );
 
         } else if (fromDate != null) {
             trips = tripRepository
-                    .findByStartDateBetween(fromDate, toDate, pageable);
+                    .findByUserIdAndStartDateBetween(
+                            userId,
+                            fromDate,
+                            toDate,
+                            pageable
+                    );
 
         } else {
-            trips = tripRepository.findAll(pageable);
+            trips = tripRepository.findByUserId(userId, pageable);
         }
 
-        Page<TripResponse> tripResponses = trips.map(this::createTripResponse);
-        log.info("Successfully retrieved all trips");
+        Page<TripResponse> tripResponses =
+                trips.map(this::createTripResponse);
+
+        log.info("Successfully retrieved trips for user: {}", userId);
+
         return tripResponses;
     }
 
@@ -163,7 +212,8 @@ public class TripService {
 
         List<Destination> destinations =
                 destinationRepository.findByTripIdOrderBySortOrderAscIdAsc(
-                        trip.getId());
+                        trip.getId()
+                );
 
         // Add trip summary fields
         response.setDestinationCount(destinations.size());
@@ -173,11 +223,14 @@ public class TripService {
 
         response.setSpent(budgetSummary.getSpent());
 
-        List<DestinationResponse> destinationResponses = new ArrayList<>();
+        List<DestinationResponse> destinationResponses =
+                new ArrayList<>();
 
         for (Destination destination : destinations) {
             DestinationResponse destinationResponse =
-                    destinationServiceBean.createDestinationResponse(destination);
+                    destinationServiceBean.createDestinationResponse(
+                            destination
+                    );
 
             destinationResponses.add(destinationResponse);
         }
@@ -188,29 +241,36 @@ public class TripService {
     }
 
     public TripResponse getTripById(Long id) {
+
         log.info("Retrieving trip: {}", id);
-        Trip trip = tripRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Trip not found"
-                ));
+
+        Trip trip = currentUserService.getOwnedTripById(id);
+
         TripResponse tripResponse = createTripResponse(trip);
+
         log.info("Trip {} successfully retrieved", id);
+
         return tripResponse;
     }
 
     public void deleteTripById(Long id) {
-        log.info("Deleting Trip: {}", id);
-        Trip trip = tripRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("No such trip exists"));
+
+        log.info("Deleting trip: {}", id);
+
+        Trip trip = currentUserService.getOwnedTripById(id);
+
         tripRepository.delete(trip);
+
         log.info("Trip: {} successfully deleted", id);
     }
 
     @Transactional(rollbackOn = Exception.class)
-    public TripResponse replaceTrip(Long id, TripUpdateRequest request) {
+    public TripResponse replaceTrip(
+            Long id,
+            TripUpdateRequest request
+    ) {
 
-        Trip trip = tripRepository.findById(id)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("Trip not found"));
+        Trip trip = currentUserService.getOwnedTripById(id);
 
         // 1. Validate and update trip fields.
         if (request.getTitle() == null
@@ -238,19 +298,22 @@ public class TripService {
         if (request.getTravellers() == null
                 || request.getTravellers() < 1) {
             throw new BadRequestException(
-                    "At least 1 traveller is required.");
+                    "At least 1 traveller is required."
+            );
         }
 
         if (request.getTotalBudget() == null
                 || request.getTotalBudget()
-                .compareTo(java.math.BigDecimal.ZERO) <= 0) {
+                .compareTo(BigDecimal.ZERO) <= 0) {
             throw new BadRequestException(
-                    "Budget must be positive.");
+                    "Budget must be positive."
+            );
         }
 
         if (request.getDestinations() == null) {
             throw new BadRequestException(
-                    "Destinations list is required.");
+                    "Destinations list is required."
+            );
         }
 
         trip.setTitle(request.getTitle().trim());
@@ -269,50 +332,61 @@ public class TripService {
                 existingDestinations.stream()
                         .collect(Collectors.toMap(
                                 Destination::getId,
-                                d -> d));
+                                d -> d
+                        ));
 
-        Set<Long> requestedDestinationIds =
-                new HashSet<>();
+        Set<Long> requestedDestinationIds = new HashSet<>();
 
         // Validate destination IDs before changing associations.
         for (DestinationUpdateRequest d : request.getDestinations()) {
+
             if (d.getId() != null) {
+
                 if (!requestedDestinationIds.add(d.getId())) {
                     throw new BadRequestException(
-                            "Duplicate destination ID: " + d.getId());
+                            "Duplicate destination ID: " + d.getId()
+                    );
                 }
 
                 if (!destinationById.containsKey(d.getId())) {
                     throw new BadRequestException(
                             "Destination does not belong to this trip: "
-                                    + d.getId());
+                                    + d.getId()
+                    );
                 }
             }
 
             if (d.getCountry() == null || d.getCountry().isBlank()
                     || d.getCity() == null || d.getCity().isBlank()) {
                 throw new BadRequestException(
-                        "Destination country and city are required.");
+                        "Destination country and city are required."
+                );
             }
 
             if (d.getDays() == null || d.getDays() <= 0) {
                 throw new BadRequestException(
-                        "Destination days must be positive.");
+                        "Destination days must be positive."
+                );
             }
 
             if (d.getActivities() == null) {
                 throw new BadRequestException(
-                        "Activities list is required for each destination.");
+                        "Activities list is required for each destination."
+                );
             }
         }
 
         // 3. Delete omitted destinations and their activities.
         for (Destination existing : existingDestinations) {
+
             if (!requestedDestinationIds.contains(existing.getId())) {
+
                 activityRepository.deleteAll(
                         activityRepository
                                 .findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(
-                                        existing.getId()));
+                                        existing.getId()
+                                )
+                );
 
                 destinationRepository.delete(existing);
             }
@@ -324,7 +398,9 @@ public class TripService {
         List<Destination> orderedDestinations = new ArrayList<>();
 
         for (int i = 0; i < request.getDestinations().size(); i++) {
-            DestinationUpdateRequest d = request.getDestinations().get(i);
+
+            DestinationUpdateRequest d =
+                    request.getDestinations().get(i);
 
             Destination destination;
 
@@ -345,12 +421,15 @@ public class TripService {
             destination.setEndDate(trip.getStartDate());
 
             orderedDestinations.add(
-                    destinationRepository.save(destination));
+                    destinationRepository.save(destination)
+            );
         }
 
         // 5. Requested destination days must equal the trip duration.
         long tripDays = ChronoUnit.DAYS.between(
-                trip.getStartDate(), trip.getEndDate()) + 1;
+                trip.getStartDate(),
+                trip.getEndDate()
+        ) + 1;
 
         long allocatedDays = orderedDestinations.stream()
                 .mapToLong(Destination::getDays)
@@ -359,13 +438,15 @@ public class TripService {
         if (allocatedDays != tripDays) {
             throw new BadRequestException(
                     "Destination days must total " + tripDays
-                            + " days, but total " + allocatedDays + ".");
+                            + " days, but total " + allocatedDays + "."
+            );
         }
 
         // 6. Calculate final destination dates.
         LocalDate currentStart = trip.getStartDate();
 
         for (Destination destination : orderedDestinations) {
+
             destination.setStartDate(currentStart);
 
             LocalDate currentEnd =
@@ -379,35 +460,42 @@ public class TripService {
 
         // 7. Reconcile activities against the final destination dates.
         for (int i = 0; i < orderedDestinations.size(); i++) {
+
             Destination destination = orderedDestinations.get(i);
-            DestinationUpdateRequest d = request.getDestinations().get(i);
+            DestinationUpdateRequest d =
+                    request.getDestinations().get(i);
 
             List<Activity> existingActivities =
                     activityRepository
                             .findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(
-                                    destination.getId());
+                                    destination.getId()
+                            );
 
             Map<Long, Activity> activityById =
                     existingActivities.stream()
                             .collect(Collectors.toMap(
                                     Activity::getId,
-                                    a -> a));
+                                    a -> a
+                            ));
 
-            Set<Long> requestedActivityIds =
-                    new HashSet<>();
+            Set<Long> requestedActivityIds = new HashSet<>();
 
             // Validate activity IDs and required fields first.
             for (ActivityUpdateRequest a : d.getActivities()) {
+
                 if (a.getId() != null) {
+
                     if (!requestedActivityIds.add(a.getId())) {
                         throw new BadRequestException(
-                                "Duplicate activity ID: " + a.getId());
+                                "Duplicate activity ID: " + a.getId()
+                        );
                     }
 
                     if (!activityById.containsKey(a.getId())) {
                         throw new BadRequestException(
                                 "Activity does not belong to this destination: "
-                                        + a.getId());
+                                        + a.getId()
+                        );
                     }
                 }
 
@@ -418,12 +506,14 @@ public class TripService {
                         || a.getStartTime() == null
                         || a.getEndTime() == null) {
                     throw new BadRequestException(
-                            "All activity fields are required.");
+                            "All activity fields are required."
+                    );
                 }
             }
 
             // Delete omitted activities.
             for (Activity existing : existingActivities) {
+
                 if (!requestedActivityIds.contains(existing.getId())) {
                     activityRepository.delete(existing);
                 }
@@ -431,6 +521,7 @@ public class TripService {
 
             // Update existing activities or create new ones.
             for (int j = 0; j < d.getActivities().size(); j++) {
+
                 ActivityUpdateRequest a = d.getActivities().get(j);
 
                 Activity activity;
@@ -454,17 +545,20 @@ public class TripService {
                 if (a.getDate().isBefore(destination.getStartDate())
                         || a.getDate().isAfter(destination.getEndDate())) {
                     throw new BadRequestException(
-                            "Activity date must fall within destination dates.");
+                            "Activity date must fall within destination dates."
+                    );
                 }
 
                 if (!a.getEndTime().isAfter(a.getStartTime())) {
                     throw new BadRequestException(
-                            "Activity end time must be after start time.");
+                            "Activity end time must be after start time."
+                    );
                 }
 
                 if (a.getCost().compareTo(BigDecimal.ZERO) < 0) {
                     throw new BadRequestException(
-                            "Activity cost cannot be negative.");
+                            "Activity cost cannot be negative."
+                    );
                 }
 
                 activityRepository.save(activity);
@@ -476,6 +570,4 @@ public class TripService {
 
         return createTripResponse(trip);
     }
-
-
 }

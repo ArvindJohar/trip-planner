@@ -1,3 +1,4 @@
+
 package com.myTripProject.PlanYourTrip.entity;
 
 import jakarta.persistence.*;
@@ -39,6 +40,10 @@ public class Trip {
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal totalBudget;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

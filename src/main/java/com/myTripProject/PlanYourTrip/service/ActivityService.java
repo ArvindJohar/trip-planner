@@ -1,4 +1,5 @@
 package com.myTripProject.PlanYourTrip.service;
+
 import com.myTripProject.PlanYourTrip.dto.ActivityPatchRequest2;
 import com.myTripProject.PlanYourTrip.dto.ActivityRequest;
 import com.myTripProject.PlanYourTrip.dto.ActivityResponse;
@@ -22,37 +23,45 @@ import java.util.List;
 @Slf4j
 @Service
 public class ActivityService {
+
     private final ActivityRepository activityRepository;
     private final DestinationRepository destinationRepository;
     private final TripRepository tripRepository;
+    private final CurrentUserService currentUserService;
 
-    ActivityService(ActivityRepository activityRepository, DestinationRepository destinationRepository, TripRepository tripRepository) {
+    public ActivityService(
+            ActivityRepository activityRepository,
+            DestinationRepository destinationRepository,
+            TripRepository tripRepository,
+            CurrentUserService currentUserService
+    ) {
         this.activityRepository = activityRepository;
         this.destinationRepository = destinationRepository;
         this.tripRepository = tripRepository;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional
     public ActivityResponse createActivity(
             Long destinationId,
             LocalDate date,
-            ActivityRequest request) {
-
+            ActivityRequest request
+    ) {
         log.info("Creating new activity...");
 
-        Destination destination = destinationRepository.findById(destinationId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "No destination with requested id exists"));
+        Destination destination = getOwnedDestinationById(destinationId);
 
         if (!request.getEndTime().isAfter(request.getStartTime())) {
             throw new BadRequestException(
-                    "Activity end time must be after start time");
+                    "Activity end time must be after start time"
+            );
         }
 
         if (date.isBefore(destination.getStartDate())
                 || date.isAfter(destination.getEndDate())) {
             throw new BadRequestException(
-                    "Activity date must fall within destination dates");
+                    "Activity date must fall within destination dates"
+            );
         }
 
         Activity activity = new Activity();
@@ -65,60 +74,86 @@ public class ActivityService {
         activity.setStartTime(request.getStartTime());
         activity.setEndTime(request.getEndTime());
 
-        // Append the new activity after existing activities
+        // Append the new activity after existing activities.
         Integer maxSortOrder =
                 activityRepository.findMaxSortOrderByDestinationId(destinationId);
 
-        activity.setSortOrder(maxSortOrder == null ? 1 : maxSortOrder + 1);
+        activity.setSortOrder(
+                maxSortOrder == null ? 1 : maxSortOrder + 1
+        );
 
         Activity savedActivity = activityRepository.save(activity);
 
         touchDestination(destinationId);
         touchTrip(destination.getTrip().getId());
 
-        ActivityResponse activityResponse = createActivityResponse(savedActivity);
+        log.info(
+                "Activity successfully created with id: {}",
+                savedActivity.getId()
+        );
 
-        log.info("Activity successfully created with id: {}", savedActivity.getId());
-
-        return activityResponse;
+        return createActivityResponse(savedActivity);
     }
+
     public List<ActivityResponse> getActivities(Long destinationId) {
         log.info("Fetching all activities of Destination {}", destinationId);
-        destinationRepository.findById(destinationId).orElseThrow(() -> new ResourceNotFoundException("Destination does not exist"));
-        List<Activity> activities = activityRepository.findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(destinationId);
+
+        // Verify that the destination belongs to the current user's trip.
+        getOwnedDestinationById(destinationId);
+
+        List<Activity> activities =
+                activityRepository
+                        .findByDestinationIdOrderByDateAscStartTimeAscSortOrderAsc(
+                                destinationId
+                        );
+
         List<ActivityResponse> activityResponses = new ArrayList<>();
-        for(Activity activity : activities) {
+
+        for (Activity activity : activities) {
             activityResponses.add(createActivityResponse(activity));
         }
+
         log.info("All activities of Destination {} retrieved", destinationId);
+
         return activityResponses;
     }
 
     public List<ActivityResponse> getActivities2(Long tripId) {
         log.info("Finding all activities inside trip {}", tripId);
-        tripRepository.findById(tripId).orElseThrow(() -> new ResourceNotFoundException("Trip " + tripId + " not exists"));
-        List<Activity> activities = activityRepository.findByDestinationTripIdOrderByDateAscStartTimeAscSortOrderAsc(tripId);
+
+        // Only allow access to activities inside the current user's trip.
+        currentUserService.getOwnedTripById(tripId);
+
+        List<Activity> activities =
+                activityRepository
+                        .findByDestinationTripIdOrderByDateAscStartTimeAscSortOrderAsc(
+                                tripId
+                        );
+
         List<ActivityResponse> activityResponses = new ArrayList<>();
-        for(Activity activity : activities) {
+
+        for (Activity activity : activities) {
             activityResponses.add(createActivityResponse(activity));
         }
+
         log.info("All activities of trip {} retrieved", tripId);
+
         return activityResponses;
     }
 
     public ActivityResponse getActivityById(Long activityId) {
-        log.info("Fetching activity by ID: " + activityId);
+        log.info("Fetching activity by ID: {}", activityId);
 
-        Activity activity = activityRepository.findById(activityId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "No activity with this id exists"));
+        Activity activity = getOwnedActivityById(activityId);
 
-        ActivityResponse activityResponse = createActivityResponse(activity);
-        log.info("Found activity ID: " + activity.getId());
-        return activityResponse;
+        log.info("Found activity ID: {}", activity.getId());
+
+        return createActivityResponse(activity);
     }
+
     public ActivityResponse createActivityResponse(Activity activity) {
         ActivityResponse activityResponse = new ActivityResponse();
+
         activityResponse.setId(activity.getId());
         activityResponse.setStartTime(activity.getStartTime());
         activityResponse.setEndTime(activity.getEndTime());
@@ -129,41 +164,57 @@ public class ActivityService {
         activityResponse.setCreatedAt(activity.getCreatedAt());
         activityResponse.setUpdatedAt(activity.getUpdatedAt());
         activityResponse.setSortOrder(activity.getSortOrder());
+
         return activityResponse;
     }
+
+    @Transactional
     public void deleteActivityById(Long activityId) {
         log.info("Deleting activity {}", activityId);
-        Activity activity = activityRepository.findById(activityId).orElseThrow(() -> new ResourceNotFoundException("Activity " + activityId + " not exists"));
+
+        // Verify ownership before deleting.
+        Activity activity = getOwnedActivityById(activityId);
+
         Destination destination = activity.getDestination();
+
         activityRepository.delete(activity);
+
         touchDestination(destination.getId());
         touchTrip(destination.getTrip().getId());
+
         log.info("Activity {} successfully deleted", activityId);
     }
-    @Transactional
-    public ActivityResponse updateActivityById(Long id, ActivityPatchRequest2 request) {
 
+    @Transactional
+    public ActivityResponse updateActivityById(
+            Long id,
+            ActivityPatchRequest2 request
+    ) {
         log.info("Updating activity {}", id);
-        Activity activity = activityRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Activity " + id + " does not exist"
-                ));
+
+        // Verify ownership before modifying the activity.
+        Activity activity = getOwnedActivityById(id);
 
         if (request.getTitle() != null) {
             activity.setTitle(request.getTitle().trim());
         }
+
         if (request.getDate() != null) {
             activity.setDate(request.getDate());
         }
+
         if (request.getStartTime() != null) {
             activity.setStartTime(request.getStartTime());
         }
+
         if (request.getEndTime() != null) {
             activity.setEndTime(request.getEndTime());
         }
+
         if (request.getCategory() != null) {
             activity.setCategory(request.getCategory());
         }
+
         if (request.getCost() != null) {
             activity.setCost(request.getCost());
         }
@@ -196,13 +247,44 @@ public class ActivityService {
         touchDestination(destination.getId());
         touchTrip(destination.getTrip().getId());
 
-        ActivityResponse activityResponse = createActivityResponse(updatedActivity);
         log.info("Activity {} successfully updated", id);
-        return activityResponse;
+
+        return createActivityResponse(updatedActivity);
     }
+
+    private Activity getOwnedActivityById(Long activityId) {
+        Activity activity = activityRepository.findById(activityId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Activity not found"
+                ));
+
+        // An activity belongs to a destination, which belongs to a trip.
+        // Verify that the current user owns that trip.
+        currentUserService.getOwnedTripById(
+                activity.getDestination().getTrip().getId()
+        );
+
+        return activity;
+    }
+
+    private Destination getOwnedDestinationById(Long destinationId) {
+        Destination destination = destinationRepository.findById(destinationId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Destination not found"
+                ));
+
+        currentUserService.getOwnedTripById(
+                destination.getTrip().getId()
+        );
+
+        return destination;
+    }
+
     private void touchTrip(Long tripId) {
         Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new ResourceNotFoundException("Trip not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Trip not found"
+                ));
 
         trip.setUpdatedAt(java.time.LocalDateTime.now());
         tripRepository.saveAndFlush(trip);
@@ -210,7 +292,9 @@ public class ActivityService {
 
     private void touchDestination(Long destinationId) {
         Destination destination = destinationRepository.findById(destinationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Destination not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Destination not found"
+                ));
 
         destination.setUpdatedAt(java.time.LocalDateTime.now());
         destinationRepository.saveAndFlush(destination);
