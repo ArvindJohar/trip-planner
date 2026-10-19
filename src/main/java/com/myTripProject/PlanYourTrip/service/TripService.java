@@ -236,7 +236,13 @@ public class TripService {
         }
 
         response.setDestinations(destinationResponses);
+        String coverImageUrl = destinationResponses.stream()
+                .map(DestinationResponse::getImageUrl)
+                .filter(imageUrl -> imageUrl != null && !imageUrl.isBlank())
+                .findFirst()
+                .orElse(null);
 
+        response.setCoverImageUrl(coverImageUrl);
         return response;
     }
 
@@ -272,7 +278,6 @@ public class TripService {
 
         Trip trip = currentUserService.getOwnedTripById(id);
 
-        // 1. Validate and update trip fields.
         if (request.getTitle() == null
                 || request.getTitle().isBlank()) {
             throw new BadRequestException("Title cannot be blank.");
@@ -323,7 +328,6 @@ public class TripService {
         trip.setTravellers(request.getTravellers());
         trip.setTotalBudget(request.getTotalBudget());
 
-        // 2. Load existing destinations.
         List<Destination> existingDestinations =
                 destinationRepository
                         .findByTripIdOrderBySortOrderAscIdAsc(id);
@@ -337,7 +341,6 @@ public class TripService {
 
         Set<Long> requestedDestinationIds = new HashSet<>();
 
-        // Validate destination IDs before changing associations.
         for (DestinationUpdateRequest d : request.getDestinations()) {
 
             if (d.getId() != null) {
@@ -376,7 +379,6 @@ public class TripService {
             }
         }
 
-        // 3. Delete omitted destinations and their activities.
         for (Destination existing : existingDestinations) {
 
             if (!requestedDestinationIds.contains(existing.getId())) {
@@ -394,7 +396,6 @@ public class TripService {
 
         destinationRepository.flush();
 
-        // 4. Update or create destinations in request order.
         List<Destination> orderedDestinations = new ArrayList<>();
 
         for (int i = 0; i < request.getDestinations().size(); i++) {
@@ -425,7 +426,6 @@ public class TripService {
             );
         }
 
-        // 5. Requested destination days must equal the trip duration.
         long tripDays = ChronoUnit.DAYS.between(
                 trip.getStartDate(),
                 trip.getEndDate()
@@ -442,7 +442,6 @@ public class TripService {
             );
         }
 
-        // 6. Calculate final destination dates.
         LocalDate currentStart = trip.getStartDate();
 
         for (Destination destination : orderedDestinations) {
@@ -458,7 +457,6 @@ public class TripService {
 
         destinationRepository.saveAllAndFlush(orderedDestinations);
 
-        // 7. Reconcile activities against the final destination dates.
         for (int i = 0; i < orderedDestinations.size(); i++) {
 
             Destination destination = orderedDestinations.get(i);
@@ -480,7 +478,6 @@ public class TripService {
 
             Set<Long> requestedActivityIds = new HashSet<>();
 
-            // Validate activity IDs and required fields first.
             for (ActivityUpdateRequest a : d.getActivities()) {
 
                 if (a.getId() != null) {
@@ -511,7 +508,6 @@ public class TripService {
                 }
             }
 
-            // Delete omitted activities.
             for (Activity existing : existingActivities) {
 
                 if (!requestedActivityIds.contains(existing.getId())) {
@@ -519,7 +515,6 @@ public class TripService {
                 }
             }
 
-            // Update existing activities or create new ones.
             for (int j = 0; j < d.getActivities().size(); j++) {
 
                 ActivityUpdateRequest a = d.getActivities().get(j);
@@ -565,7 +560,6 @@ public class TripService {
             }
         }
 
-        // 8. Persist the completed trip and return its full response.
         tripRepository.saveAndFlush(trip);
 
         return createTripResponse(trip);

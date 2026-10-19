@@ -13,6 +13,7 @@ public class DestinationResponse {
     private Long id;
     private String country;
     private String city;
+    private String imageUrl;
     private LocalDate startDate;
     private LocalDate endDate;
     private LocalDateTime createdAt;

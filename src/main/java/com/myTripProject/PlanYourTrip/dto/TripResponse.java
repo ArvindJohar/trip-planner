@@ -23,6 +23,7 @@ public class TripResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Integer destinationCount;
+    private String coverImageUrl;
     private BigDecimal spent;
     private List<DestinationResponse> destinations;
 }

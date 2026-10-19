@@ -27,19 +27,21 @@ public class DestinationService {
     private final ActivityRepository activityRepository;
     private final ActivityService activityServiceBean;
     private final CurrentUserService currentUserService;
+    private final PlaceImageService placeImageService;
 
     public DestinationService(
             DestinationRepository destinationRepository,
             TripRepository tripRepository,
             ActivityRepository activityRepository,
             ActivityService activityServiceBean,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService, PlaceImageService placeImageService
     ) {
         this.destinationRepository = destinationRepository;
         this.tripRepository = tripRepository;
         this.activityRepository = activityRepository;
         this.activityServiceBean = activityServiceBean;
         this.currentUserService = currentUserService;
+        this.placeImageService = placeImageService;
     }
 
     @Transactional
@@ -125,15 +127,19 @@ public class DestinationService {
         return destinationResponses;
     }
 
-    public DestinationResponse createDestinationResponse(
-            Destination destination
-    ) {
+    public DestinationResponse createDestinationResponse(Destination destination) {
 
         DestinationResponse destinationResponse = new DestinationResponse();
 
         destinationResponse.setId(destination.getId());
         destinationResponse.setCountry(destination.getCountry());
         destinationResponse.setCity(destination.getCity());
+        destinationResponse.setImageUrl(
+                placeImageService.getImageUrl(
+                        destination.getCity(),
+                        destination.getCountry()
+                )
+        );
         destinationResponse.setSortOrder(destination.getSortOrder());
         destinationResponse.setDays(destination.getDays());
         destinationResponse.setStartDate(destination.getStartDate());
